@@ -109,7 +109,7 @@ public sealed class FailClosedGateTests
         FailClosedGate.EnsureCanBoot(configuration);
 
         var refusal = RemittanceSystemOfRecord.RefusePayout();
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, refusal.StatusCode);
+        Assert.Equal(503, refusal.StatusCode);
         Assert.False(refusal.PayoutExecuted);
         Assert.False(refusal.MoneyPass);
         Assert.False(RemittanceSystemOfRecord.Identity.MoneyPass);
