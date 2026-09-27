@@ -19,7 +19,13 @@
     "journeyAcceptClaimed": false,
     "equicom": "HOLD",
     "sellOpen": "FROZEN",
-    "outboundEmail": false
+    "outboundEmail": false,
+    "postingPortStatus": "NotConfigured",
+    "customerDirectoryStatus": "NotConfigured",
+    "documentPortStatus": "NotConfigured",
+    "localGlOwned": false,
+    "postingSubmitted": false,
+    "adminGlassShipped": false
   },
   "forbiddenPulseRails": [
     "INSTAPAY",

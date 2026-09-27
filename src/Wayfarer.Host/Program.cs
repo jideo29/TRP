@@ -29,7 +29,9 @@ app.MapGet("/api/host", () =>
         equicom = id.Equicom,
         outboundEmail = id.OutboundEmail,
         sellOpen = id.SellOpen,
-        riskCompliance = RiskComplianceGate.Honesty
+        adminGlassShipped = false,
+        riskCompliance = RiskComplianceGate.Honesty,
+        moneyPorts = MoneyPortsGate.Honesty
     });
 });
 
@@ -44,6 +46,44 @@ app.MapPost("/api/risk/decide", (RiskDecideRequest? request) =>
 app.MapPost("/api/compliance/consult", (ComplianceConsultRequest? request) =>
 {
     var result = RiskComplianceGate.Consult(request, app.Configuration);
+    return Results.Json(result, statusCode: result.StatusCode);
+});
+
+app.MapGet("/api/posting/status", () => Results.Ok(MoneyPortsGate.Honesty));
+
+app.MapPost("/api/posting/submit", (PostingSubmitRequest? request) =>
+{
+    var result = MoneyPortsGate.Submit(request, app.Configuration);
+    return Results.Json(result, statusCode: result.StatusCode);
+});
+
+app.MapPost("/api/customers/lookup", (CustomerLookupRequest? request) =>
+{
+    var result = MoneyPortsGate.LookupCustomer(request, app.Configuration);
+    return Results.Json(result, statusCode: result.StatusCode);
+});
+
+app.MapPost("/api/customers", (CustomerLookupRequest? request) =>
+{
+    var result = MoneyPortsGate.RefuseLocalCif(request);
+    return Results.Json(result, statusCode: result.StatusCode);
+});
+
+app.MapMethods("/api/ledger/balances", ["POST", "PUT", "PATCH"], () =>
+{
+    var result = MoneyPortsGate.RefuseLocalGl();
+    return Results.Json(result, statusCode: result.StatusCode);
+});
+
+app.MapPost("/api/balances", () =>
+{
+    var result = MoneyPortsGate.RefuseLocalGl();
+    return Results.Json(result, statusCode: result.StatusCode);
+});
+
+app.MapPost("/api/documents/evidence", (EvidenceClaimRequest? request) =>
+{
+    var result = MoneyPortsGate.ClaimEvidence(request, app.Configuration);
     return Results.Json(result, statusCode: result.StatusCode);
 });
 
@@ -116,6 +156,13 @@ app.MapGet("/health", () => Results.Ok(new
     riskPortStatus = RiskComplianceGate.NotConfigured,
     aegisIdentityStatus = RiskComplianceGate.NotConfigured,
     entitlementStatus = RiskComplianceGate.NotConfigured,
+    postingPortStatus = MoneyPortsGate.NotConfigured,
+    customerDirectoryStatus = MoneyPortsGate.NotConfigured,
+    documentPortStatus = MoneyPortsGate.NotConfigured,
+    localGlOwned = false,
+    postingSubmitted = false,
+    outboundCall = false,
+    adminGlassShipped = false,
     complianceUnknownIsAllow = false,
     journeyAcceptClaimed = false,
 }));

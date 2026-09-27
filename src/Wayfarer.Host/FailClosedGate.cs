@@ -41,6 +41,31 @@ public static class FailClosedGate
                 + RemittanceSystemOfRecord.Statement);
         }
 
+        if (configuration.GetValue("Wayfarer:ClaimMoneyPass", false))
+        {
+            throw new InvalidOperationException(
+                "Wayfarer fails closed: money_pass invent is refused. "
+                + "money_pass stays false. No outbound PostingPort call. "
+                + RemittanceSystemOfRecord.Statement
+                + " The remittance journey is not unblocked.");
+        }
+
+        if (configuration.GetValue("Wayfarer:OwnLocalGl", false))
+        {
+            throw new InvalidOperationException(
+                "Wayfarer fails closed: local GL ownership is refused. "
+                + "Balances change only via PostingPort. "
+                + RemittanceSystemOfRecord.Statement);
+        }
+
+        if (configuration.GetValue("Wayfarer:AllowStubPosting", false))
+        {
+            throw new InvalidOperationException(
+                "Wayfarer fails closed: stub posting is not Allow. Unknown ≠ Allow. "
+                + "No outbound PostingPort call. money_pass stays false. "
+                + RemittanceSystemOfRecord.Statement);
+        }
+
         var mode = configuration["Deployment:Mode"] ?? "Unlabeled";
         if (IsRegulatedMode(mode))
         {
@@ -48,6 +73,8 @@ public static class FailClosedGate
                 "Wayfarer fails closed: " + mode
                 + " is refused because live payout is not implemented and peer ports are not a payout. "
                 + "RiskPort/Aegis/Entitlement remain NotConfigured (Fail-not-Pass). "
+                + "PostingPort and CustomerDirectoryPort stay NotConfigured (Fail-not-Pass). "
+                + "Local GL is refused. "
                 + RemittanceSystemOfRecord.Statement
                 + " The remittance journey is not unblocked.");
         }
