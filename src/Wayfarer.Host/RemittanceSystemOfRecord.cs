@@ -27,6 +27,12 @@ public static class RemittanceSystemOfRecord
         OutboundEmail: false,
         SellOpen: "FROZEN");
 
+    public static HostHealth Health { get; } = new(
+        Status: "process-up",
+        MoneyPass: false,
+        RemittanceJourneyUnblocked: false,
+        LivePayout: false);
+
     public static PayoutRefusal RefusePayout() => new(
         StatusCode: StatusCodes.Status503ServiceUnavailable,
         Code: FailClosedCode,
@@ -59,3 +65,9 @@ public sealed record PayoutRefusal(
     string Message,
     bool PayoutExecuted,
     bool MoneyPass);
+
+public sealed record HostHealth(
+    string Status,
+    bool MoneyPass,
+    bool RemittanceJourneyUnblocked,
+    bool LivePayout);

@@ -1,0 +1,23 @@
+extends:
+  - spectral:oas
+rules:
+  # No contact is published. Do not invent one.
+  info-contact: off
+  # Payout is fail-closed and has no success response.
+  operation-success-response: off
+  wayfarer-relative-servers:
+    description: Server URLs stay relative so the document does not embed a host.
+    given: $.servers[*].url
+    severity: error
+    then:
+      function: pattern
+      functionOptions:
+        match: "^/.*$"
+  wayfarer-no-absolute-urls:
+    description: The document must not contain absolute URLs.
+    given: $..*
+    severity: error
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "https?://"
