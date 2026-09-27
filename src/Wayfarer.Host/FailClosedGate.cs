@@ -1,8 +1,8 @@
 namespace Wayfarer;
 
 /// <summary>
-/// Refuses to boot a path that would look like live remittance or a soft unpark.
-/// Standalone skeleton boot is allowed; payout and Nova intake still fail closed.
+/// Refuses to boot a path that would look like live remittance, soft unpark, or soft risk Pass.
+/// Standalone skeleton boot is allowed; payout, Nova intake, and risk/compliance still fail closed.
 /// </summary>
 public static class FailClosedGate
 {
@@ -32,12 +32,22 @@ public static class FailClosedGate
                 + RemittanceSystemOfRecord.Statement);
         }
 
+        if (configuration.GetValue("Wayfarer:InventRiskAllow", false)
+            || configuration.GetValue("Wayfarer:SoftCompliancePass", false))
+        {
+            throw new InvalidOperationException(
+                "Wayfarer fails closed: soft risk/compliance Pass invent is refused. "
+                + "Unknown ≠ Allow. Unconfigured RiskPort/Aegis/Entitlement paths are Fail, not Pass. "
+                + RemittanceSystemOfRecord.Statement);
+        }
+
         var mode = configuration["Deployment:Mode"] ?? "Unlabeled";
         if (IsRegulatedMode(mode))
         {
             throw new InvalidOperationException(
                 "Wayfarer fails closed: " + mode
                 + " is refused because live payout is not implemented and peer ports are not a payout. "
+                + "RiskPort/Aegis/Entitlement remain NotConfigured (Fail-not-Pass). "
                 + RemittanceSystemOfRecord.Statement
                 + " The remittance journey is not unblocked.");
         }

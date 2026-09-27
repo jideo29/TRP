@@ -6,7 +6,46 @@ FailClosedGate.EnsureCanBoot(builder.Configuration);
 
 var app = builder.Build();
 
-app.MapGet("/api/host", () => Results.Ok(RemittanceSystemOfRecord.Identity));
+app.MapGet("/api/host", () =>
+{
+    var id = RemittanceSystemOfRecord.Identity;
+    return Results.Ok(new
+    {
+        product = id.Product,
+        repository = id.Repository,
+        role = id.Role,
+        notPulse = id.NotPulse,
+        tension = id.Tension,
+        statement = id.Statement,
+        livePayout = id.LivePayout,
+        moneyPass = id.MoneyPass,
+        remittanceJourney = id.RemittanceJourney,
+        remittanceJourneyUnblocked = id.RemittanceJourneyUnblocked,
+        journeyAcceptClaimed = id.JourneyAcceptClaimed,
+        pulseRailsAbsorbed = id.PulseRailsAbsorbed,
+        novaRemittanceIntentsAbsorbedByPulse = id.NovaRemittanceIntentsAbsorbedByPulse,
+        forbiddenPulseRails = id.ForbiddenPulseRails,
+        waveDParked = id.WaveDParked,
+        equicom = id.Equicom,
+        outboundEmail = id.OutboundEmail,
+        sellOpen = id.SellOpen,
+        riskCompliance = RiskComplianceGate.Honesty
+    });
+});
+
+app.MapGet("/api/risk/status", () => Results.Ok(RiskComplianceGate.Honesty));
+
+app.MapPost("/api/risk/decide", (RiskDecideRequest? request) =>
+{
+    var result = RiskComplianceGate.Decide(request, app.Configuration);
+    return Results.Json(result, statusCode: result.StatusCode);
+});
+
+app.MapPost("/api/compliance/consult", (ComplianceConsultRequest? request) =>
+{
+    var result = RiskComplianceGate.Consult(request, app.Configuration);
+    return Results.Json(result, statusCode: result.StatusCode);
+});
 
 app.MapGet("/api/manifest", () =>
 {
@@ -39,8 +78,18 @@ app.MapPost("/api/remittance/payout", async (HttpRequest http) =>
         body = await http.ReadFromJsonAsync<PayoutRequest>();
     }
 
-    var refusal = RemittanceSystemOfRecord.RefusePayout(body?.Rail ?? body?.Channel);
-    return Results.Json(refusal, statusCode: refusal.StatusCode);
+    var rail = body?.Rail ?? body?.Channel;
+
+    // T-11 Pulse rail absorption stays explicit and first.
+    if (RemittanceSystemOfRecord.IsForbiddenPulseRail(rail))
+    {
+        var absorption = RemittanceSystemOfRecord.RefusePulseRailAbsorption(rail!);
+        return Results.Json(absorption, statusCode: absorption.StatusCode);
+    }
+
+    // Unconfigured RiskPort / Aegis / Entitlement → Fail-not-Pass (Unknown ≠ Allow).
+    var riskBlocked = RiskComplianceGate.RefusePayoutForRiskCompliance(app.Configuration, rail);
+    return Results.Json(riskBlocked, statusCode: riskBlocked.StatusCode);
 });
 
 app.MapPost("/api/remittance/intents", async (HttpRequest http) =>
@@ -64,6 +113,10 @@ app.MapGet("/health", () => Results.Ok(new
     livePayout = false,
     pulseRailsAbsorbed = false,
     waveDParked = true,
+    riskPortStatus = RiskComplianceGate.NotConfigured,
+    aegisIdentityStatus = RiskComplianceGate.NotConfigured,
+    entitlementStatus = RiskComplianceGate.NotConfigured,
+    complianceUnknownIsAllow = false,
     journeyAcceptClaimed = false,
 }));
 
