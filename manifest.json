@@ -1,0 +1,34 @@
+{
+  "product": "Wayfarer",
+  "repository": "jideo29/TRP",
+  "status": "fail-closed-scaffold",
+  "wave": "D",
+  "waveDParked": true,
+  "systemOfRecord": {
+    "remittancePayout": "wayfarer",
+    "paymentRails": "pulse"
+  },
+  "honesty": {
+    "notPulse": true,
+    "tension": "T-11",
+    "pulseRailsAbsorbed": false,
+    "novaRemittanceIntentsAbsorbedByPulse": false,
+    "remittanceJourney": "Blocked",
+    "livePayout": false,
+    "moneyPass": false,
+    "journeyAcceptClaimed": false,
+    "equicom": "HOLD",
+    "sellOpen": "FROZEN",
+    "outboundEmail": false
+  },
+  "forbiddenPulseRails": [
+    "INSTAPAY",
+    "PESONET",
+    "PDDTS",
+    "SWIFT",
+    "BILLS",
+    "QR",
+    "ECOMMERCE",
+    "COLLECTIONS"
+  ]
+}
