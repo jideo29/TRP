@@ -1,0 +1,37 @@
+name: OpenAPI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.318"
+
+      - name: Test
+        run: dotnet test Wayfarer.sln --configuration Release
+
+      - name: Export OpenAPI and fail on drift
+        run: ./scripts/export-openapi.sh --check
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Lint OpenAPI with Spectral
+        run: npx --yes @stoplight/spectral-cli@6.16.3 lint docs/api/wayfarer-openapi-v1.json --ruleset .spectral.yaml
+
+      - name: Assert Swagger UI returns 404 in Production
+        run: ./scripts/assert-swagger-production-404.sh

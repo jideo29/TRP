@@ -39,6 +39,20 @@ public sealed class RemittanceHostTests : IClassFixture<WebApplicationFactory<Pr
     }
 
     [Fact]
+    public async Task Health_is_a_process_probe_only()
+    {
+        var client = _factory.CreateClient();
+
+        var body = await client.GetFromJsonAsync<JsonElement>("/health", Json);
+
+        Assert.Equal("process-up", body.GetProperty("status").GetString());
+        Assert.False(body.GetProperty("moneyPass").GetBoolean());
+        Assert.False(body.GetProperty("remittanceJourneyUnblocked").GetBoolean());
+        Assert.False(body.GetProperty("livePayout").GetBoolean());
+        Assert.Equal(4, body.EnumerateObject().Count());
+    }
+
+    [Fact]
     public async Task Payout_fails_closed_and_does_not_execute()
     {
         var client = _factory.CreateClient();

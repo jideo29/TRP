@@ -1,0 +1,224 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Wayfarer",
+    "description": "Fail-closed remittance host. Live payout is not implemented and the payout operation does not move money. HTTP Bearer is declared for JWT access tokens. The routes in this document do not require a token.",
+    "version": "v1"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/host": {
+      "get": {
+        "tags": [
+          "Host"
+        ],
+        "summary": "Returns the identity of this fail-closed remittance host.",
+        "description": "Reads the published identity of this process. It does not enable payout.",
+        "operationId": "GetHostIdentity",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostIdentity"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/remittance/payout": {
+      "post": {
+        "tags": [
+          "Remittance"
+        ],
+        "summary": "Refuses a payout. No money movement is executed.",
+        "description": "Live payout is not implemented. This operation always fails closed.",
+        "operationId": "RefusePayout",
+        "responses": {
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutRefusal"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Process probe. Live payout is not available.",
+        "description": "Reports that the process is up. It does not report a live payout path.",
+        "operationId": "GetHealth",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostHealth"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HostHealth": {
+        "required": [
+          "status",
+          "moneyPass",
+          "remittanceJourneyUnblocked",
+          "livePayout"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "moneyPass": {
+            "type": "boolean"
+          },
+          "remittanceJourneyUnblocked": {
+            "type": "boolean"
+          },
+          "livePayout": {
+            "type": "boolean"
+          }
+        }
+      },
+      "HostIdentity": {
+        "required": [
+          "product",
+          "repository",
+          "role",
+          "notPulse",
+          "tension",
+          "statement",
+          "livePayout",
+          "moneyPass",
+          "remittanceJourneyUnblocked",
+          "journeyAcceptClaimed",
+          "novaRemittanceIntentsAbsorbedByPulse",
+          "equicom",
+          "outboundEmail",
+          "sellOpen"
+        ],
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "notPulse": {
+            "type": "boolean"
+          },
+          "tension": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "livePayout": {
+            "type": "boolean"
+          },
+          "moneyPass": {
+            "type": "boolean"
+          },
+          "remittanceJourneyUnblocked": {
+            "type": "boolean"
+          },
+          "journeyAcceptClaimed": {
+            "type": "boolean"
+          },
+          "novaRemittanceIntentsAbsorbedByPulse": {
+            "type": "boolean"
+          },
+          "equicom": {
+            "type": "string"
+          },
+          "outboundEmail": {
+            "type": "boolean"
+          },
+          "sellOpen": {
+            "type": "string"
+          }
+        }
+      },
+      "PayoutRefusal": {
+        "required": [
+          "statusCode",
+          "code",
+          "message",
+          "payoutExecuted",
+          "moneyPass"
+        ],
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payoutExecuted": {
+            "type": "boolean"
+          },
+          "moneyPass": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "HTTP Bearer authentication with a JWT access token.",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    { },
+    {
+      "Bearer": [ ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "Host"
+    },
+    {
+      "name": "Remittance"
+    },
+    {
+      "name": "Health"
+    }
+  ]
+}
