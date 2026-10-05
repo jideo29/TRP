@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" role="img">
+  <title>Payout closed</title>
+  <rect width="72" height="72" rx="18" fill="#F3E6E2"/>
+  <circle cx="36" cy="36" r="16" fill="none" stroke="#4A2420" stroke-width="3"/>
+  <path d="M24 36h24" stroke="#4A2420" stroke-width="3" stroke-linecap="round"/>
+</svg>

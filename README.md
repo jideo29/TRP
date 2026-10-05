@@ -14,6 +14,7 @@ Equicom remains **HOLD**. There is no outbound email. Sell-open stays **FROZEN**
 
 | Surface | Behavior |
 | --- | --- |
+| `GET /` | Operator status page. It reads this process. It does not send a payout. |
 | `GET /api/host` | States that this process is the remittance system of record, not Pulse (T-11). |
 | `POST /api/remittance/payout` | Always fails closed. No payout is executed. |
 | `GET /health` | Process probe only. `money_pass` is false. The remittance journey stays blocked. |
@@ -25,6 +26,8 @@ Regulated deployment modes (`TrudiIntegrated`, `PlatformIntegrated`, `ForeignInt
 ```bash
 dotnet run --project src/Wayfarer.Host
 ```
+
+The http launch profile listens on `http://localhost:5230`. This repository has no demo password.
 
 ```bash
 dotnet test Wayfarer.sln
