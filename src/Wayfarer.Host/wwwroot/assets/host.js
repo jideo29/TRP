@@ -14,6 +14,14 @@
   window.addEventListener("offline", setOffline);
   setOffline();
 
+  function readable(err) {
+    var message = err && err.message ? err.message : "";
+    if (!navigator.onLine || /failed to fetch/i.test(message) || /networkerror/i.test(message)) {
+      return "The host could not be reached.";
+    }
+    return message || "The status could not be read.";
+  }
+
   function show(state) {
     loading.hidden = state !== "loading";
     errorPanel.hidden = state !== "error";
@@ -101,8 +109,7 @@
       document.getElementById("read-at").textContent = "Read at " + stamp() + " browser local time.";
       show("ready");
     } catch (err) {
-      document.getElementById("error-detail").textContent =
-        err && err.message ? err.message : "The status could not be read.";
+      document.getElementById("error-detail").textContent = readable(err);
       show("error");
     }
   }
@@ -145,7 +152,7 @@
     } catch (err) {
       box.replaceChildren();
       var fail = document.createElement("p");
-      fail.textContent = err && err.message ? err.message : "The refusal could not be read.";
+      fail.textContent = readable(err);
       box.appendChild(fail);
     } finally {
       refusalButton.disabled = false;

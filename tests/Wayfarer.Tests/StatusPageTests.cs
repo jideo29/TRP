@@ -28,6 +28,7 @@ public sealed class StatusPageTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Contains("This host does not publish an intent route.", html);
         Assert.Contains("An unbound peer is refused.", html);
         Assert.Contains("/assets/mark.svg", html);
+        Assert.Contains("/assets/wordmark.svg", html);
         Assert.Contains("/assets/closed.svg", html);
         Assert.Contains("/assets/host.js", html);
         Assert.DoesNotContain("#F6F5F1", html, StringComparison.OrdinalIgnoreCase);
