@@ -35,6 +35,7 @@ internal static class WayfarerOpenApiHostExtensions
                 options.RoutePrefix = "swagger";
                 options.DocumentTitle = "Wayfarer";
                 options.SwaggerEndpoint("/openapi/v1.json", "Wayfarer v1");
+                options.InjectStylesheet("/assets/swagger.css");
                 options.ConfigObject.ValidatorUrl = null;
             });
         }

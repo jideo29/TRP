@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Remittance host</title>
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/assets/host.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to status</a>
+  <header class="top">
+    <img class="mark" src="/assets/mark.svg" width="44" height="44" alt="" />
+    <div class="titles">
+      <p class="eyebrow">Operator status</p>
+      <h1>Remittance host</h1>
+    </div>
+  </header>
+  <div id="offline" class="banner" role="status" hidden>This browser is offline. Live status cannot be read.</div>
+  <main id="main">
+    <p class="lede">This page reads the host that is running. It does not send a payout, quote a rate, or post a ledger entry.</p>
+
+    <section class="card" aria-labelledby="read-heading">
+      <div class="card-head">
+        <h2 id="read-heading">Live reading</h2>
+        <p>These values come from this process.</p>
+      </div>
+      <div id="loading" class="skeleton" aria-busy="true" aria-live="polite">
+        <span class="bar"></span>
+        <span class="bar short"></span>
+        <p>Reading the host.</p>
+      </div>
+      <div id="error" class="notice error" hidden>
+        <h3>Status could not be read</h3>
+        <p id="error-detail"></p>
+        <button id="retry" class="primary" type="button">Try again</button>
+      </div>
+      <div id="ready" hidden>
+        <ul class="chips" aria-label="Flags">
+          <li><span class="chip-label">Process</span> <strong id="chip-process">Not reported</strong></li>
+          <li><span class="chip-label">money_pass</span> <strong id="chip-money">False</strong></li>
+          <li><span class="chip-label">bank_booked</span> <strong id="chip-booked">False</strong></li>
+          <li><span class="chip-label">settled</span> <strong id="chip-settled">False</strong></li>
+        </ul>
+        <p id="booked-note" class="note">bank_booked and settled are false. This host does not report a booking or a settlement.</p>
+        <dl class="facts" id="facts"></dl>
+        <p id="read-at" class="note"></p>
+      </div>
+    </section>
+
+    <section class="card payout" aria-labelledby="payout-heading">
+      <img class="closed-mark" src="/assets/closed.svg" width="72" height="72" alt="" />
+      <div class="payout-copy">
+        <h2 id="payout-heading">Payout is closed</h2>
+        <p>Live payout is not implemented. The payout route refuses the call. money_pass is false. bank_booked is false. settled is false.</p>
+        <p>No amount, currency pair, or partner is shown, because this host does not have one.</p>
+        <button id="read-refusal" class="primary" type="button">Read the refusal</button>
+        <div id="refusal" class="refusal" hidden></div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="empty-heading">
+      <div class="card-head">
+        <h2 id="empty-heading">No screen for these</h2>
+        <p>Each item stays closed. This page does not fill in a partner, a rate, or a ledger reference.</p>
+      </div>
+      <ul class="empty-list">
+        <li>
+          <h3>Inbound credit</h3>
+          <p>No corridor and no partner are configured. Nothing on this page credits an account.</p>
+        </li>
+        <li>
+          <h3>Domestic payout</h3>
+          <p>No rail call is made from this page. The payout route stays closed.</p>
+        </li>
+        <li>
+          <h3>Outbound conversion</h3>
+          <p>No currency pair and no rate are published.</p>
+        </li>
+        <li>
+          <h3>Intent intake</h3>
+          <p>This host does not publish an intent route.</p>
+        </li>
+        <li>
+          <h3>Corridor and partner console</h3>
+          <p>That console is not on this host.</p>
+        </li>
+        <li>
+          <h3>Directory, posting, documents, and risk</h3>
+          <p>Those peers are not configured here. An unbound peer is refused.</p>
+        </li>
+      </ul>
+    </section>
+  </main>
+  <noscript>
+    <p class="banner">JavaScript is off. The payout route still refuses a payout. money_pass stays false.</p>
+  </noscript>
+  <script src="/assets/host.js"></script>
+</body>
+</html>

@@ -5,6 +5,8 @@ FailClosedGate.EnsureCanBoot(builder.Configuration);
 builder.AddWayfarerOpenApi();
 
 var app = builder.Build();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseWayfarerOpenApi();
 
 app.MapGet("/api/host", () => Results.Ok(RemittanceSystemOfRecord.Identity))

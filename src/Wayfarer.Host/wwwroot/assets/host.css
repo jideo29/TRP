@@ -1,0 +1,372 @@
+/*
+  Lab neutral ink for the operator status page.
+  Wayfarer has no theme token file in the architecture pack and no Canva brand template.
+  Paper #E4E1DA, card #FFFFFF, ink #1A1A1A.
+*/
+
+:root {
+  --paper: #E4E1DA;
+  --card: #FFFFFF;
+  --ink: #1A1A1A;
+  --muted: #3A3632;
+  --line: #D0CBC3;
+  --tile: #F0F0F0;
+  --shadow: 0 10px 28px rgba(26, 26, 26, 0.08);
+  --raise: 0 8px 16px rgba(26, 26, 26, 0.18);
+  --closed-bg: #F3E6E2;
+  --closed-ink: #4A2420;
+  --radius: 16px;
+  --gap: 16px;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-padding-top: 16px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: system-ui, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.skip {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  transform: translateY(-140%);
+  background: var(--ink);
+  color: #FFFFFF;
+  padding: 12px 16px;
+  border-radius: 12px;
+  z-index: 2;
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 16px 8px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.mark {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  font-weight: 680;
+}
+
+main {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 8px 16px 48px;
+  display: grid;
+  gap: var(--gap);
+}
+
+.lede {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--muted);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.card-head h2,
+.payout h2,
+.empty-list h3,
+.notice h3,
+.refusal h3 {
+  margin: 0 0 4px;
+  line-height: 1.25;
+}
+
+.card-head p,
+.note {
+  margin: 0;
+  color: var(--muted);
+}
+
+h2 {
+  font-size: 1.25rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+.skeleton {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.skeleton p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.bar {
+  display: block;
+  height: 14px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #E6E6E6, #F5F5F5, #E6E6E6);
+  background-size: 200% 100%;
+  animation: sheen 1.4s ease-in-out infinite;
+}
+
+.bar.short {
+  width: 55%;
+}
+
+@keyframes sheen {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.notice {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--closed-bg);
+  color: var(--closed-ink);
+}
+
+.notice p {
+  margin: 0 0 12px;
+}
+
+.chips {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chips li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--tile);
+  border: 1px solid var(--line);
+}
+
+.chip-label {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px 16px;
+  margin: 16px 0 8px;
+}
+
+.facts div {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.facts dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.facts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+.payout {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FBF8F6 100%);
+}
+
+.closed-mark {
+  width: 72px;
+  height: 72px;
+}
+
+.payout-copy p {
+  margin: 8px 0 0;
+  max-width: 68ch;
+}
+
+.primary {
+  appearance: none;
+  margin-top: 16px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ink);
+  color: #FFFFFF;
+  font: inherit;
+  font-weight: 680;
+  box-shadow: var(--raise);
+  cursor: pointer;
+}
+
+.primary:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.primary:focus-visible,
+.skip:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.refusal {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--tile);
+  border: 1px solid var(--line);
+}
+
+.refusal dl {
+  margin: 8px 0 0;
+}
+
+.refusal dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.refusal dd {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.empty-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 12px;
+}
+
+.empty-list li {
+  background: var(--tile);
+  border-radius: 12px;
+  padding: 16px;
+  min-height: 44px;
+}
+
+.empty-list p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.banner {
+  max-width: 1120px;
+  margin: 8px auto 0;
+  padding: 12px 16px;
+  background: var(--closed-bg);
+  color: var(--closed-ink);
+  border-radius: 12px;
+}
+
+noscript .banner {
+  margin: 16px;
+}
+
+#read-at {
+  margin-top: 8px;
+}
+
+@media (min-width: 768px) {
+  .top,
+  main {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .facts {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .payout {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .empty-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1100px) {
+  .empty-list {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+@media (max-width: 389px) {
+  h1 {
+    font-size: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+  }
+}

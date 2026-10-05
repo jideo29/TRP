@@ -1,0 +1,10 @@
+/* Operator API browser. Ink top bar. No separate brand palette is documented for Wayfarer. */
+.swagger-ui .topbar {
+  background-color: #1A1A1A;
+}
+
+.swagger-ui,
+.swagger-ui .info .title,
+.swagger-ui .opblock-summary-path {
+  font-family: system-ui, "Segoe UI", sans-serif;
+}
