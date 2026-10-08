@@ -27,6 +27,30 @@ app.MapPost("/api/remittance/payout", () =>
     .WithDescription("Live payout is not implemented. This operation always fails closed.")
     .Produces<PayoutRefusal>(StatusCodes.Status503ServiceUnavailable);
 
+app.MapPost("/api/standalone/session", (StandaloneLogin? body, IConfiguration configuration) =>
+{
+    if (!StandaloneLocalSession.TryIssue(configuration, body?.OperatorId, DateTimeOffset.UtcNow, out var token, out var failure))
+        return Results.Json(new { label = StandaloneLocalSession.Label, failure }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    return Results.Ok(new { token, operatorId = body!.OperatorId!.Trim(), label = StandaloneLocalSession.Label });
+}).ExcludeFromDescription();
+
+app.MapGet("/api/standalone/session", (HttpRequest request, IConfiguration configuration) =>
+{
+    var header = request.Headers.Authorization.ToString();
+    const string prefix = "Bearer ";
+    var presented = header.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? header[prefix.Length..] : string.Empty;
+    return StandaloneLocalSession.TryRead(configuration, presented, out var operatorId)
+        ? Results.Ok(new { operatorId, label = StandaloneLocalSession.Label })
+        : Results.Unauthorized();
+}).ExcludeFromDescription();
+
+app.MapGet("/api/standalone/entitlement", () => Results.Ok(new
+{
+    code = StandaloneLocalSession.EntitlementCode,
+    label = StandaloneLocalSession.EntitlementLabel,
+    allowed = false
+})).ExcludeFromDescription();
+
 app.MapGet("/health", () => Results.Ok(RemittanceSystemOfRecord.Health))
     .WithName("GetHealth")
     .WithTags("Health")
@@ -37,3 +61,5 @@ app.MapGet("/health", () => Results.Ok(RemittanceSystemOfRecord.Health))
 app.Run();
 
 public partial class Program;
+
+internal sealed record StandaloneLogin(string? OperatorId);
