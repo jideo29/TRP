@@ -2,6 +2,7 @@ using Wayfarer;
 
 var builder = WebApplication.CreateBuilder(args);
 FailClosedGate.EnsureCanBoot(builder.Configuration);
+builder.Services.AddSingleton<ITitanCustomerLedgerBind>(_ => new TitanCustomerLedgerBind(builder.Configuration));
 builder.AddWayfarerOpenApi();
 
 var app = builder.Build();
@@ -26,6 +27,19 @@ app.MapPost("/api/remittance/payout", () =>
     .WithSummary("Refuses a payout. No money movement is executed.")
     .WithDescription("Live payout is not implemented. This operation always fails closed.")
     .Produces<PayoutRefusal>(StatusCodes.Status503ServiceUnavailable);
+
+app.MapGet("/api/remittance/binding", async (
+        string scheme,
+        string id,
+        string tenantId,
+        ITitanCustomerLedgerBind bind,
+        CancellationToken cancellationToken) =>
+    {
+        var customer = await bind.ResolveCustomerAsync(scheme, id, tenantId, cancellationToken);
+        var ledger = await bind.ResolveLedgerAsync(scheme, id, tenantId, cancellationToken);
+        return Results.Ok(new RemittanceBinding(customer, ledger));
+    })
+    .ExcludeFromDescription();
 
 app.MapPost("/api/standalone/session", (StandaloneLogin? body, IConfiguration configuration) =>
 {
@@ -59,6 +73,8 @@ app.MapGet("/health", () => Results.Ok(RemittanceSystemOfRecord.Health))
     .Produces<HostHealth>(StatusCodes.Status200OK);
 
 app.Run();
+
+public sealed record RemittanceBinding(TitanCustomerBindResult Customer, TitanLedgerBindResult Ledger);
 
 public partial class Program;
 
