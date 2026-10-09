@@ -3,6 +3,7 @@ using Wayfarer;
 var builder = WebApplication.CreateBuilder(args);
 FailClosedGate.EnsureCanBoot(builder.Configuration);
 builder.Services.AddSingleton<ITitanCustomerLedgerBind>(_ => new TitanCustomerLedgerBind(builder.Configuration));
+builder.Services.AddSingleton(_ => new RemittancePayout(builder.Configuration));
 builder.AddWayfarerOpenApi();
 
 var app = builder.Build();
@@ -17,15 +18,36 @@ app.MapGet("/api/host", () => Results.Ok(RemittanceSystemOfRecord.Identity))
     .WithDescription("Reads the published identity of this process. It does not enable payout.")
     .Produces<HostIdentity>(StatusCodes.Status200OK);
 
-app.MapPost("/api/remittance/payout", () =>
+app.MapPost("/api/remittance/payout", async (
+        HttpRequest request,
+        RemittancePayout payout,
+        CancellationToken cancellationToken) =>
 {
-    var refusal = RemittanceSystemOfRecord.RefusePayout();
-    return Results.Json(refusal, statusCode: refusal.StatusCode);
+    var body = await RemittancePayout.ReadBodyAsync(request, cancellationToken);
+    var header = request.Headers.Authorization.ToString();
+    const string prefix = "Bearer ";
+    var bearer = header.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? header[prefix.Length..].Trim() : string.Empty;
+    var result = await payout.ExecuteAsync(
+        new RemittancePayoutInput(
+            body?.CustomerRef?.Scheme,
+            body?.CustomerRef?.Id,
+            body?.CustomerRef?.TenantId,
+            body?.Rail,
+            body?.AmountPhp,
+            bearer,
+            request.Headers["X-Correlation-Id"].ToString()),
+        cancellationToken);
+    return Results.Json(result, statusCode: result.StatusCode);
 })
     .WithName("RefusePayout")
     .WithTags("Remittance")
-    .WithSummary("Refuses a payout. No money movement is executed.")
-    .WithDescription("Live payout is not implemented. This operation always fails closed.")
+    .WithSummary("Payout toward Pulse. No settlement is claimed.")
+    .WithDescription(
+        "Live payout is not implemented. customerRef is required. "
+        + "The handoff goes to Pulse (InstaPay or PESONet, with no default rail) and does not post to Titan. "
+        + "Integrated mode fails closed when Pulse, Atlas, or Sentinel is unset. "
+        + "The standalone stand-in is labeled SIMULATED. "
+        + "This operation does not claim settlement, bank_booked, or money_pass.")
     .Produces<PayoutRefusal>(StatusCodes.Status503ServiceUnavailable);
 
 app.MapGet("/api/remittance/binding", async (
@@ -75,6 +97,10 @@ app.MapGet("/health", () => Results.Ok(RemittanceSystemOfRecord.Health))
 app.Run();
 
 public sealed record RemittanceBinding(TitanCustomerBindResult Customer, TitanLedgerBindResult Ledger);
+
+public sealed record RemittancePayoutBody(CustomerRefBody? CustomerRef, string? Rail, decimal? AmountPhp);
+
+public sealed record CustomerRefBody(string? Scheme, string? Id, string? TenantId);
 
 public partial class Program;
 
