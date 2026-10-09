@@ -40,7 +40,10 @@ public static class RemittanceSystemOfRecord
             + Statement
             + " The remittance journey is not unblocked.",
         PayoutExecuted: false,
-        MoneyPass: false);
+        MoneyPass: false,
+        Label: "FAIL_CLOSED",
+        BankBooked: false,
+        SettlementClaimed: false);
 }
 
 public sealed record HostIdentity(
@@ -64,7 +67,10 @@ public sealed record PayoutRefusal(
     string Code,
     string Message,
     bool PayoutExecuted,
-    bool MoneyPass);
+    bool MoneyPass,
+    string Label,
+    bool BankBooked,
+    bool SettlementClaimed);
 
 public sealed record HostHealth(
     string Status,
