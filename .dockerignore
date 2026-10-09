@@ -1,0 +1,8 @@
+.git
+**/.git
+**/bin
+**/obj
+**/node_modules
+**/TestResults
+_bmad-output
+.agents
