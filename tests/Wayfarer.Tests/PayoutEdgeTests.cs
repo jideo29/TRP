@@ -94,12 +94,17 @@ public sealed class PayoutEdgeTests
         Assert.Equal("Bearer token-1", calls.Authorizations[0]);
         Assert.Contains("/api/v1/risk/decisions", calls.Paths[1], StringComparison.Ordinal);
         Assert.DoesNotContain("score", calls.Bodies[1], StringComparison.OrdinalIgnoreCase);
-        Assert.EndsWith("/instapay/transfers", calls.Paths[2], StringComparison.Ordinal);
+        Assert.EndsWith("/corp-pay/orchestrate", calls.Paths[2], StringComparison.Ordinal);
+        Assert.Contains("\"channelProduct\":\"instapay\"", calls.Bodies[2], StringComparison.Ordinal);
+        Assert.Contains("\"debtorCustomerRefId\":\"cif-1\"", calls.Bodies[2], StringComparison.Ordinal);
+        Assert.DoesNotContain("instapay/transfers", calls.Paths[2], StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pesonet/batches", calls.Paths[2], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("posting", calls.Paths[2], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("titan", calls.Paths[2], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("score", calls.Bodies[2], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("bank_booked", calls.Bodies[2], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("money_pass", calls.Bodies[2], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("tenant-1", calls.Tenants[2]);
     }
 
     [Fact]
@@ -122,7 +127,7 @@ public sealed class PayoutEdgeTests
         var titanRail = await payout.ExecuteAsync(Input(rail: "titan", amount: 10m, bearer: "token-1"), CancellationToken.None);
         Assert.Equal(RemittancePayout.RefusedLabel, titanRail.Label);
         Assert.DoesNotContain(calls.Paths, path => path.Contains("posting", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(calls.Paths, path => path.Contains("instapay", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(calls.Paths, path => path.Contains("corp-pay", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -143,7 +148,7 @@ public sealed class PayoutEdgeTests
         Assert.Equal(RemittancePayout.RefusedLabel, result.Label);
         Assert.False(result.MoneyPass);
         Assert.Equal(2, calls.Count);
-        Assert.DoesNotContain(calls.Paths, path => path.Contains("pesonet", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(calls.Paths, path => path.Contains("corp-pay", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -204,12 +209,14 @@ public sealed class PayoutEdgeTests
         public List<string> Paths { get; } = [];
         public List<string> Bodies { get; } = [];
         public List<string?> Authorizations { get; } = [];
+        public List<string?> Tenants { get; } = [];
         public int Count => Paths.Count;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Paths.Add(request.RequestUri?.PathAndQuery ?? "");
             Authorizations.Add(request.Headers.Authorization?.ToString());
+            Tenants.Add(request.Headers.TryGetValues("X-Tenant-Id", out var tenants) ? tenants.Single() : null);
             Bodies.Add(request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken));
             return respond(request);
         }

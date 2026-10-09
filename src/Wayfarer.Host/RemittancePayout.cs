@@ -117,6 +117,8 @@ public sealed class RemittancePayout
             pulseUrl,
             input.Rail,
             input.AmountPhp,
+            input.Id,
+            input.TenantId,
             input.Bearer,
             input.CorrelationId,
             handler,
@@ -337,10 +339,18 @@ public static class SentinelRiskCall
 
 public static class PulsePayoutPort
 {
+    /// <summary>
+    /// Pulse path Summit calls. TPCP <c>cursor/pulse-titan-posting-33cb</c>
+    /// <c>c18b0b0fbcfd1382f482b279018ea6df13a992da</c> keeps this route.
+    /// </summary>
+    public const string OrchestratePath = "corp-pay/orchestrate";
+
     public static async Task<PeerCallResult> SubmitAsync(
         string? baseUrl,
         string? rail,
         decimal? amountPhp,
+        string? debtorCustomerRefId,
+        string? tenantId,
         string? bearer,
         string? correlationId,
         HttpMessageHandler? handler,
@@ -353,28 +363,7 @@ public static class PulsePayoutPort
             return new PeerCallResult(PeerOutcome.Refused, false, "Pulse payout requires a bearer token.");
 
         var selected = rail?.Trim().ToLowerInvariant();
-        string path;
-        string payload;
-        if (selected == "instapay")
-        {
-            if (amountPhp is null || amountPhp <= 0)
-                return new PeerCallResult(PeerOutcome.Refused, false, "InstaPay amount is required.");
-            path = "instapay/transfers";
-            payload = JsonSerializer.Serialize(new { amountPhp });
-        }
-        else if (selected == "pesonet")
-        {
-            if (amountPhp is null || amountPhp <= 0)
-                return new PeerCallResult(PeerOutcome.Refused, false, "PESONet amount is required.");
-            path = "pesonet/batches/process";
-            payload = JsonSerializer.Serialize(new
-            {
-                businessDate = DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"),
-                amountsPhp = new[] { amountPhp },
-                clearingPayloadXml = (string?)null
-            });
-        }
-        else
+        if (selected is not ("instapay" or "pesonet"))
         {
             return new PeerCallResult(
                 PeerOutcome.Refused,
@@ -382,9 +371,22 @@ public static class PulsePayoutPort
                 "Rail must be instapay or pesonet. Wayfarer does not choose a rail and does not post to Titan.");
         }
 
+        if (amountPhp is null || amountPhp <= 0)
+            return new PeerCallResult(PeerOutcome.Refused, false, "Payout amount is required.");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            amountPhp,
+            narrative = "Wayfarer remittance payout",
+            debtorCustomerRefId,
+            channelProduct = selected,
+            currency = "PHP"
+        });
+
         if (payload.Contains("score", StringComparison.OrdinalIgnoreCase)
             || payload.Contains("bank_booked", StringComparison.OrdinalIgnoreCase)
-            || payload.Contains("money_pass", StringComparison.OrdinalIgnoreCase))
+            || payload.Contains("money_pass", StringComparison.OrdinalIgnoreCase)
+            || payload.Contains("posting-instructions", StringComparison.OrdinalIgnoreCase))
         {
             return new PeerCallResult(PeerOutcome.Refused, false, "Payout payload refused.");
         }
@@ -395,20 +397,82 @@ public static class PulsePayoutPort
                 handler,
                 baseUrl!,
                 HttpMethod.Post,
-                path,
+                OrchestratePath,
                 bearer,
                 correlationId,
                 payload,
                 cancellationToken,
-                Guid.NewGuid().ToString("D"));
+                correlationId ?? Guid.NewGuid().ToString("D"),
+                tenantId,
+                ReadJwtString(bearer, "sub"),
+                ReadAuthorizationDecision(bearer));
             if (response.StatusCode is not (HttpStatusCode.OK or HttpStatusCode.Accepted))
                 return new PeerCallResult(PeerOutcome.Refused, false, "Pulse did not accept the handoff.");
 
-            return new PeerCallResult(PeerOutcome.TowardPulse, true, "Pulse accepted the handoff on " + selected + ".");
+            if (ClaimsMoney(response.Body))
+                return new PeerCallResult(PeerOutcome.Refused, false, "Pulse returned a settlement claim. Wayfarer does not accept it.");
+
+            return new PeerCallResult(PeerOutcome.TowardPulse, true, "Pulse accepted the handoff on POST /corp-pay/orchestrate (" + selected + ").");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             return new PeerCallResult(PeerOutcome.Refused, false, "Pulse payout failed closed.");
+        }
+    }
+
+    private static bool ClaimsMoney(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return false;
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            return Flag(root, "moneyPass")
+                || Flag(root, "money_pass")
+                || Flag(root, "bankBooked")
+                || Flag(root, "bank_booked")
+                || Flag(root, "settlementClaimed")
+                || Flag(root, "settled");
+        }
+        catch (JsonException)
+        {
+            return true;
+        }
+    }
+
+    private static bool Flag(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
+    private static string? ReadAuthorizationDecision(string bearer) =>
+        ReadJwtString(bearer, "authorization_decision_id")
+        ?? ReadJwtString(bearer, "authz_decision_id")
+        ?? ReadJwtString(bearer, "authorizationDecisionId");
+
+    private static string? ReadJwtString(string? bearer, string claim)
+    {
+        if (string.IsNullOrWhiteSpace(bearer))
+            return null;
+        var parts = bearer.Trim().Split('.');
+        if (parts.Length < 2)
+            return null;
+        try
+        {
+            var payload = parts[1].Replace('-', '+').Replace('_', '/');
+            payload = (payload.Length % 4) switch
+            {
+                2 => payload + "==",
+                3 => payload + "=",
+                _ => payload
+            };
+            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(payload)));
+            return document.RootElement.TryGetProperty(claim, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+        catch (Exception ex) when (ex is FormatException or JsonException)
+        {
+            return null;
         }
     }
 }
@@ -426,7 +490,10 @@ internal static class PeerHttp
         string? correlationId,
         string? json,
         CancellationToken cancellationToken,
-        string? idempotencyKey = null)
+        string? idempotencyKey = null,
+        string? tenantId = null,
+        string? subjectId = null,
+        string? authorizationDecisionId = null)
     {
         using var client = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
         client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
@@ -437,6 +504,12 @@ internal static class PeerHttp
             request.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
             request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
+        if (!string.IsNullOrWhiteSpace(tenantId))
+            request.Headers.TryAddWithoutValidation("X-Tenant-Id", tenantId);
+        if (!string.IsNullOrWhiteSpace(subjectId))
+            request.Headers.TryAddWithoutValidation("X-Subject-Id", subjectId);
+        if (!string.IsNullOrWhiteSpace(authorizationDecisionId))
+            request.Headers.TryAddWithoutValidation("X-Authorization-Decision-Id", authorizationDecisionId);
         if (json is not null)
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
         using var response = await client.SendAsync(request, cancellationToken);

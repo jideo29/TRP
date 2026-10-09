@@ -16,7 +16,7 @@ Equicom remains **HOLD**. There is no outbound email. Sell-open stays **FROZEN**
 | --- | --- |
 | `GET /` | Operator status page. It reads this process. It does not send a payout. |
 | `GET /api/host` | States that this process is the remittance system of record, not Pulse (T-11). |
-| `POST /api/remittance/payout` | Requires `customerRef`. Toward Pulse on InstaPay or PESONet when `Pulse:BaseUrl`, `Atlas:BaseUrl`, and `Sentinel:BaseUrl` are set. No default rail and no Titan posting. Integrated mode fails closed when any of those URLs is unset. The standalone stand-in is labeled SIMULATED. No settlement, `bank_booked`, or `money_pass`. Live payout is not implemented. |
+| `POST /api/remittance/payout` | Requires `customerRef`. Toward Pulse at `POST /corp-pay/orchestrate` (the path Summit uses) when `Pulse:BaseUrl`, `Atlas:BaseUrl`, and `Sentinel:BaseUrl` are set. `channelProduct` is `instapay` or `pesonet`, with no default rail and no Titan posting. An empty Pulse URL stays NotConfigured. Integrated mode fails closed when any of those URLs is unset. The standalone stand-in is labeled SIMULATED. No settlement, `bank_booked`, or `money_pass`. Live payout is not implemented. |
 | `GET /health` | Process probe only. `money_pass` is false. The remittance journey stays blocked. |
 
 Regulated deployment modes (`TrudiIntegrated`, `PlatformIntegrated`, `ForeignIntegrated`, `Production`) and `Wayfarer:LivePayout=true` refuse to boot. A Standalone skeleton may boot so the boundary can be read. Booting does not enable payout.

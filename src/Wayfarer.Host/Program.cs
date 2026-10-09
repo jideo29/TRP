@@ -44,7 +44,7 @@ app.MapPost("/api/remittance/payout", async (
     .WithSummary("Payout toward Pulse. No settlement is claimed.")
     .WithDescription(
         "Live payout is not implemented. customerRef is required. "
-        + "The handoff goes to Pulse (InstaPay or PESONet, with no default rail) and does not post to Titan. "
+        + "The handoff is POST /corp-pay/orchestrate, the Pulse path Summit uses, with channelProduct instapay or pesonet and no default rail. It does not post to Titan. "
         + "Integrated mode fails closed when Pulse, Atlas, or Sentinel is unset. "
         + "The standalone stand-in is labeled SIMULATED. "
         + "This operation does not claim settlement, bank_booked, or money_pass.")
