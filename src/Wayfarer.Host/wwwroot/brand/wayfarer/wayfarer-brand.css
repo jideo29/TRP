@@ -1,0 +1,50 @@
+/* Wayfarer brand tokens. Generated 2026-10-11 by brand/platforms/work/final/finalize.py. Source: ADR-036 (brand/palette.json), ADR-046. */
+/* Screen values. Pantone and CMYK are in wayfarer-brand.json; CMYK is an approximate ICC (SWOP) conversion, not a print spec. */
+:root {
+  --wayfarer-primary: #00594F;  /* rgb(0, 89, 79) · PANTONE 3292 C · CMYK 90/43/67/33 · 8.26:1 on white */
+  --wayfarer-mark-primary-light: #00594F;  /* rgb(0, 89, 79) · PANTONE 3292 C · CMYK 90/43/67/33 · 8.26:1 on white */
+  --wayfarer-mark-secondary-light: #121417;  /* rgb(18, 20, 23) · ≈PANTONE Black 6 C ref · CMYK 73/68/65/80 · 18.45:1 on white */
+  --wayfarer-mark-primary-navy: #6DB4A8;  /* rgb(109, 180, 168) · ≈PANTONE 563 C ref · CMYK 58/11/38/0 · 2.4:1 on white */
+  --wayfarer-mark-secondary-navy: #FFFFFF;  /* rgb(255, 255, 255) · ≈n/a (paper white) ref · CMYK 0/0/0/0 · 1.0:1 on white */
+  --wayfarer-favicon-background: #00594F;  /* rgb(0, 89, 79) · PANTONE 3292 C · CMYK 90/43/67/33 · 8.26:1 on white */
+  --wayfarer-favicon-foreground: #FFFFFF;  /* rgb(255, 255, 255) · ≈n/a (paper white) ref · CMYK 0/0/0/0 · 1.0:1 on white */
+  --wayfarer-primary-text: #00594F;  /* rgb(0, 89, 79) · PANTONE 3292 C · CMYK 90/43/67/33 · 8.26:1 on white */
+  --wayfarer-dark-primary: #6DB4A8;  /* rgb(109, 180, 168) · ≈PANTONE 563 C ref · CMYK 58/11/38/0 · 2.4:1 on white */
+  --wayfarer-ink: #121417;
+  --wayfarer-navy: #0B1F33;
+  --wayfarer-clear-space: 0.22em; /* × mark height */
+  --wayfarer-min-mark: 24px;
+  --wayfarer-min-lockup: 120px;
+}
+[data-accent="wayfarer-deep-jade"] {
+  --primary: #00594F;
+  --primary-hover: #004E44;
+  --primary-active: #00433A;
+  --primary-foreground: #FFFFFF;
+  --primary-text: #00594F;
+  --ring: #00594F;
+  --accent: #E8FAF6;
+  --accent-foreground: #171717;
+  --sidebar-primary: #00594F;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-ring: #00594F;
+  --sidebar-accent: #E8FAF6;
+  --sidebar-accent-foreground: #171717;
+  --chart-1: #00594F;
+}
+.dark[data-accent="wayfarer-deep-jade"], .dark [data-accent="wayfarer-deep-jade"] {
+  --primary: #6DB4A8;
+  --primary-hover: #79C1B4;
+  --primary-active: #86CEC1;
+  --primary-foreground: #121417;
+  --primary-text: #6DB4A8;
+  --ring: #6DB4A8;
+  --accent: #1F322F;
+  --accent-foreground: #FAFAFA;
+  --sidebar-primary: #6DB4A8;
+  --sidebar-primary-foreground: #121417;
+  --sidebar-ring: #6DB4A8;
+  --sidebar-accent: #1F322F;
+  --sidebar-accent-foreground: #FAFAFA;
+  --chart-1: #6DB4A8;
+}
