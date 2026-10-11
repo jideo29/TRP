@@ -19,7 +19,7 @@ public sealed class StatusPageTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
         var html = await response.Content.ReadAsStringAsync();
-        Assert.Contains("<title>Remittance host</title>", html);
+        Assert.Contains("<title>Wayfarer — Remittance host (scaffold)</title>", html);
         Assert.Contains("Payout is closed", html);
         Assert.Contains("money_pass is false", html);
         Assert.Contains("bank_booked is false", html);
