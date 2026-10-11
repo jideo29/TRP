@@ -1,0 +1,417 @@
+{
+  "platform": "Wayfarer",
+  "slug": "wayfarer",
+  "catalog": "PRD-REM",
+  "shortCode": "WFR",
+  "role": "Remittance",
+  "status": "Final pick (Jideo, 2026-10-11). Proposed in ADR-046. Pending Leonardo's sign-off and a trademark search by counsel.",
+  "mark": {
+    "pick": "Wayfarer 08 · Corridor",
+    "variation": "B",
+    "variationLabel": "Rising corridor, asymmetric",
+    "wave": "wave 1",
+    "source": "refine/rmarks_w1.py"
+  },
+  "family": {
+    "grid": "60° hex lattice; edges at 0/30/60/90/120/150°",
+    "channel": "≈5.5% of mark height between parts",
+    "clearSpace": "4 channels (≈22% of mark height) on every side, minimum",
+    "minSize": {
+      "markPx": 24,
+      "markSmallVariantPx": 16,
+      "horizontalLockupPx": 120,
+      "markMm": 6,
+      "horizontalLockupMm": 25
+    }
+  },
+  "fonts": {
+    "wordmark": "Inter Display (Inter opsz 32), outlined; never retype",
+    "ui": "Inter 400–700",
+    "mono": "JetBrains Mono"
+  },
+  "fixed": {
+    "ink": "#121417",
+    "navy": "#0B1F33",
+    "white": "#FFFFFF",
+    "lightBackground": "#F6F6F4"
+  },
+  "colours": {
+    "primary": {
+      "role": "ADR-036 signature colour (console accent)",
+      "hex": "#00594F",
+      "rgb": [
+        0,
+        89,
+        79
+      ],
+      "cmyk": [
+        90,
+        43,
+        67,
+        33
+      ],
+      "pantone": {
+        "code": "PANTONE 3292 C",
+        "system": "PANTONE Solid Coated (Formula Guide, coated)",
+        "status": "ADR-036 approved code; hex is Pantone's published sRGB approximation, not a print spec."
+      },
+      "contrast": {
+        "onWhite": 8.26,
+        "onNavy": 2.02,
+        "onInk": 2.23
+      }
+    },
+    "markPrimaryLight": {
+      "role": "Mark main colour on white and light backgrounds (same as primary)",
+      "hex": "#00594F",
+      "rgb": [
+        0,
+        89,
+        79
+      ],
+      "cmyk": [
+        90,
+        43,
+        67,
+        33
+      ],
+      "pantone": {
+        "code": "PANTONE 3292 C",
+        "system": "PANTONE Solid Coated (Formula Guide, coated)",
+        "status": "ADR-036 approved code; hex is Pantone's published sRGB approximation, not a print spec."
+      },
+      "contrast": {
+        "onWhite": 8.26,
+        "onNavy": 2.02,
+        "onInk": 2.23
+      }
+    },
+    "markSecondaryLight": {
+      "role": "Mark second colour on white and light backgrounds",
+      "hex": "#121417",
+      "rgb": [
+        18,
+        20,
+        23
+      ],
+      "cmyk": [
+        73,
+        68,
+        65,
+        80
+      ],
+      "pantoneNearest": {
+        "code": "PANTONE Black 6 C",
+        "deltaE2000": 4.22,
+        "status": "Nearest PANTONE Solid Coated by CIEDE2000. Reference only; not an ADR-036 colour."
+      },
+      "contrast": {
+        "onWhite": 18.45,
+        "onNavy": 1.11,
+        "onInk": 1.0
+      }
+    },
+    "markPrimaryNavy": {
+      "role": "Mark main colour on navy #0B1F33",
+      "hex": "#6DB4A8",
+      "rgb": [
+        109,
+        180,
+        168
+      ],
+      "cmyk": [
+        58,
+        11,
+        38,
+        0
+      ],
+      "pantoneNearest": {
+        "code": "PANTONE 563 C",
+        "deltaE2000": 2.37,
+        "status": "Nearest PANTONE Solid Coated by CIEDE2000. Reference only; not an ADR-036 colour."
+      },
+      "contrast": {
+        "onWhite": 2.4,
+        "onNavy": 6.95,
+        "onInk": 7.68
+      }
+    },
+    "markSecondaryNavy": {
+      "role": "Mark second colour on navy #0B1F33",
+      "hex": "#FFFFFF",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "cmyk": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "pantoneNearest": {
+        "code": "n/a (paper white)",
+        "deltaE2000": 0,
+        "status": "Unprinted substrate; no ink."
+      },
+      "contrast": {
+        "onWhite": 1.0,
+        "onNavy": 16.69,
+        "onInk": 18.45
+      }
+    },
+    "faviconBackground": {
+      "role": "Favicon, app icon and short-code chip background",
+      "hex": "#00594F",
+      "rgb": [
+        0,
+        89,
+        79
+      ],
+      "cmyk": [
+        90,
+        43,
+        67,
+        33
+      ],
+      "pantone": {
+        "code": "PANTONE 3292 C",
+        "system": "PANTONE Solid Coated (Formula Guide, coated)",
+        "status": "ADR-036 approved code; hex is Pantone's published sRGB approximation, not a print spec."
+      },
+      "contrast": {
+        "onWhite": 8.26,
+        "onNavy": 2.02,
+        "onInk": 2.23
+      }
+    },
+    "faviconForeground": {
+      "role": "Favicon, app icon and short-code chip foreground (same as primary)",
+      "hex": "#FFFFFF",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "cmyk": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "pantoneNearest": {
+        "code": "n/a (paper white)",
+        "deltaE2000": 0,
+        "status": "Unprinted substrate; no ink."
+      },
+      "contrast": {
+        "onWhite": 1.0,
+        "onNavy": 16.69,
+        "onInk": 18.45
+      }
+    },
+    "primaryText": {
+      "role": "Text-safe accent on white (ADR-036 primary-text) (same as primary)",
+      "hex": "#00594F",
+      "rgb": [
+        0,
+        89,
+        79
+      ],
+      "cmyk": [
+        90,
+        43,
+        67,
+        33
+      ],
+      "pantone": {
+        "code": "PANTONE 3292 C",
+        "system": "PANTONE Solid Coated (Formula Guide, coated)",
+        "status": "ADR-036 approved code; hex is Pantone's published sRGB approximation, not a print spec."
+      },
+      "contrast": {
+        "onWhite": 8.26,
+        "onNavy": 2.02,
+        "onInk": 2.23
+      }
+    },
+    "darkPrimary": {
+      "role": "Accent in dark mode (ADR-036 dark primary) (same as primary)",
+      "hex": "#6DB4A8",
+      "rgb": [
+        109,
+        180,
+        168
+      ],
+      "cmyk": [
+        58,
+        11,
+        38,
+        0
+      ],
+      "pantoneNearest": {
+        "code": "PANTONE 563 C",
+        "deltaE2000": 2.37,
+        "status": "Nearest PANTONE Solid Coated by CIEDE2000. Reference only; not an ADR-036 colour."
+      },
+      "contrast": {
+        "onWhite": 2.4,
+        "onNavy": 6.95,
+        "onInk": 7.68
+      }
+    }
+  },
+  "adr036": {
+    "accentSlug": "wayfarer-deep-jade",
+    "nickname": "Deep Jade",
+    "oklch": "oklch(0.416 0.075 181.9)",
+    "light": {
+      "primary": {
+        "oklch": "oklch(0.416 0.075 181.9)",
+        "hex": "#00594F"
+      },
+      "primary-hover": {
+        "oklch": "oklch(0.380 0.068 181.0)",
+        "hex": "#004E44"
+      },
+      "primary-active": {
+        "oklch": "oklch(0.343 0.062 180.0)",
+        "hex": "#00433A"
+      },
+      "primary-foreground": {
+        "oklch": "oklch(1.000 0.000 0.0)",
+        "hex": "#FFFFFF"
+      },
+      "primary-text": {
+        "oklch": "oklch(0.416 0.075 181.9)",
+        "hex": "#00594F"
+      },
+      "ring": {
+        "oklch": "oklch(0.416 0.075 181.9)",
+        "hex": "#00594F"
+      },
+      "accent": {
+        "oklch": "oklch(0.970 0.019 181.9)",
+        "hex": "#E8FAF6"
+      },
+      "accent-foreground": {
+        "oklch": "oklch(0.205 0.000 0.0)",
+        "hex": "#171717"
+      },
+      "sidebar-primary": {
+        "oklch": "oklch(0.416 0.075 181.9)",
+        "hex": "#00594F"
+      },
+      "sidebar-primary-foreground": {
+        "oklch": "oklch(1.000 0.000 0.0)",
+        "hex": "#FFFFFF"
+      },
+      "sidebar-ring": {
+        "oklch": "oklch(0.416 0.075 181.9)",
+        "hex": "#00594F"
+      },
+      "sidebar-accent": {
+        "oklch": "oklch(0.970 0.019 181.9)",
+        "hex": "#E8FAF6"
+      },
+      "sidebar-accent-foreground": {
+        "oklch": "oklch(0.205 0.000 0.0)",
+        "hex": "#171717"
+      },
+      "chart-1": {
+        "oklch": "oklch(0.416 0.075 181.9)",
+        "hex": "#00594F"
+      }
+    },
+    "dark": {
+      "primary": {
+        "oklch": "oklch(0.720 0.075 181.9)",
+        "hex": "#6DB4A8"
+      },
+      "primary-hover": {
+        "oklch": "oklch(0.760 0.075 181.9)",
+        "hex": "#79C1B4"
+      },
+      "primary-active": {
+        "oklch": "oklch(0.800 0.075 181.9)",
+        "hex": "#86CEC1"
+      },
+      "primary-foreground": {
+        "oklch": "oklch(0.190 0.007 258.4)",
+        "hex": "#121417"
+      },
+      "primary-text": {
+        "oklch": "oklch(0.720 0.075 181.9)",
+        "hex": "#6DB4A8"
+      },
+      "ring": {
+        "oklch": "oklch(0.720 0.075 181.9)",
+        "hex": "#6DB4A8"
+      },
+      "accent": {
+        "oklch": "oklch(0.300 0.026 181.9)",
+        "hex": "#1F322F"
+      },
+      "accent-foreground": {
+        "oklch": "oklch(0.985 0.000 0.0)",
+        "hex": "#FAFAFA"
+      },
+      "sidebar-primary": {
+        "oklch": "oklch(0.720 0.075 181.9)",
+        "hex": "#6DB4A8"
+      },
+      "sidebar-primary-foreground": {
+        "oklch": "oklch(0.190 0.007 258.4)",
+        "hex": "#121417"
+      },
+      "sidebar-ring": {
+        "oklch": "oklch(0.720 0.075 181.9)",
+        "hex": "#6DB4A8"
+      },
+      "sidebar-accent": {
+        "oklch": "oklch(0.300 0.026 181.9)",
+        "hex": "#1F322F"
+      },
+      "sidebar-accent-foreground": {
+        "oklch": "oklch(0.985 0.000 0.0)",
+        "hex": "#FAFAFA"
+      },
+      "chart-1": {
+        "oklch": "oklch(0.720 0.075 181.9)",
+        "hex": "#6DB4A8"
+      }
+    },
+    "contrast": {
+      "light": {
+        "primaryForeground_on_primary": 8.26,
+        "primaryForeground_on_hover": 9.66,
+        "primaryForeground_on_active": 11.27,
+        "white_on_primary": 8.26,
+        "ink_on_primary": 2.23,
+        "primary_on_white_nonText": 8.26,
+        "primaryText_on_white": 8.26,
+        "primaryText_on_tint": 7.65,
+        "accentForeground_on_tint": 16.59,
+        "ring_on_white_nonText": 8.26
+      },
+      "dark": {
+        "primaryForeground_on_primary": 7.68,
+        "primaryForeground_on_hover": 8.87,
+        "primaryForeground_on_active": 10.2,
+        "primary_on_darkBackground": 8.24,
+        "primary_on_darkCard": 7.46,
+        "accentForeground_on_darkTint": 12.93
+      }
+    },
+    "aaPass": true
+  },
+  "accentContrastNotes": [
+    "Primary #00594F on white: 8.26:1 (passes AA for text).",
+    "White on primary: 8.26:1; ink on primary: 2.23:1. Favicon and chip use white on #00594F (8.26:1).",
+    "Navy-mode mark #6DB4A8 on navy: 6.95:1.",
+    "Use primary-text #00594F for accent text on white (8.26:1).",
+    "Accent colour never replaces status colours (success, warning, destructive, info), and colour is never the only signal (ADR-036/041)."
+  ],
+  "generated": "2026-10-11"
+}
