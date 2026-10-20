@@ -180,7 +180,15 @@
         "type": "object",
         "properties": {
           "statusCode": {
-            "type": "integer",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
             "format": "int32"
           },
           "code": {
