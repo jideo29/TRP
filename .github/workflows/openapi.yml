@@ -14,10 +14,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Use runner temp for DOTNET_INSTALL_DIR
+        run: echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/dotnet" >> "$GITHUB_ENV"
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "9.0.318"
+          dotnet-version: "10.0.x"
 
       - name: Test
         run: dotnet test Wayfarer.sln --configuration Release

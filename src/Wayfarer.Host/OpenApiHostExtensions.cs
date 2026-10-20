@@ -1,4 +1,4 @@
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 
 namespace Wayfarer;
 
@@ -14,6 +14,7 @@ internal static class WayfarerOpenApiHostExtensions
     {
         builder.Services.AddOpenApi("v1", options =>
         {
+            options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_0;
             options.AddDocumentTransformer((document, _, _) =>
             {
                 FailClosedOpenApiDocument.Apply(document);
@@ -58,7 +59,7 @@ internal static class FailClosedOpenApiDocument
         };
 
         document.Components ??= new OpenApiComponents();
-        document.Components.SecuritySchemes ??= new Dictionary<string, OpenApiSecurityScheme>();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
         document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
         {
             Type = SecuritySchemeType.Http,
@@ -67,19 +68,12 @@ internal static class FailClosedOpenApiDocument
             Description = "HTTP Bearer authentication with a JWT access token."
         };
 
-        document.SecurityRequirements =
+        document.Security =
         [
             new OpenApiSecurityRequirement(),
             new OpenApiSecurityRequirement
             {
-                [new OpenApiSecurityScheme
-                {
-                    Reference = new OpenApiReference
-                    {
-                        Type = ReferenceType.SecurityScheme,
-                        Id = "Bearer"
-                    }
-                }] = []
+                [new OpenApiSecuritySchemeReference("Bearer", document)] = []
             }
         ];
 
@@ -87,7 +81,8 @@ internal static class FailClosedOpenApiDocument
 
         if (document.Paths.TryGetValue("/api/remittance/payout", out var payout)
             && payout.Operations is not null
-            && payout.Operations.TryGetValue(OperationType.Post, out var operation)
+            && payout.Operations.TryGetValue(HttpMethod.Post, out var operation)
+            && operation.Responses is not null
             && operation.Responses.ContainsKey("503"))
         {
             foreach (var key in operation.Responses.Keys.Where(key => key != "503").ToArray())
