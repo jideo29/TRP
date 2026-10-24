@@ -11,7 +11,11 @@ export ASPNETCORE_ENVIRONMENT=Development
 export ASPNETCORE_URLS="http://127.0.0.1:${port}"
 export DOTNET_NOLOGO=1
 
-setsid dotnet run --project "$root/src/Wayfarer.Host" --no-launch-profile --configuration Release >/tmp/wayfarer-openapi-export.log 2>&1 &
+# Build up front so the readiness wait below only covers host start-up, not a
+# cold compile (which can take well over the wait on a busy shared runner).
+dotnet build "$root/src/Wayfarer.Host" --configuration Release --nologo -v q
+
+setsid dotnet run --project "$root/src/Wayfarer.Host" --no-launch-profile --no-build --configuration Release >/tmp/wayfarer-openapi-export.log 2>&1 &
 pid=$!
 cleanup() {
   kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
@@ -20,7 +24,10 @@ cleanup() {
 trap cleanup EXIT
 
 ready=0
-for _ in $(seq 1 50); do
+for _ in $(seq 1 300); do
+  if ! kill -0 "$pid" 2>/dev/null; then
+    break
+  fi
   if curl -sf "http://127.0.0.1:${port}/health" >/dev/null; then
     ready=1
     break
