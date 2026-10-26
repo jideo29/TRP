@@ -137,8 +137,14 @@
         headers: { "content-type": "application/json", accept: "application/json" },
         body: "{}"
       });
-      var body = await res.json();
       box.replaceChildren();
+      if (res.status === 401) {
+        var signIn = document.createElement("p");
+        signIn.textContent = "Payout needs an Aegis access token. This page does not send one, so the request was refused with 401.";
+        box.appendChild(signIn);
+        return;
+      }
+      var body = await res.json();
       var title = document.createElement("h3");
       title.textContent = "Refusal";
       var dl = document.createElement("dl");

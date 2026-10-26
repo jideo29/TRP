@@ -16,10 +16,23 @@ Equicom remains **HOLD**. There is no outbound email. Sell-open stays **FROZEN**
 | --- | --- |
 | `GET /` | Operator status page. It reads this process. It does not send a payout. |
 | `GET /api/host` | States that this process is the remittance system of record, not Pulse (T-11). |
-| `POST /api/remittance/payout` | Requires `customerRef`. Toward Pulse at `POST /corp-pay/orchestrate` (the path Summit uses) when `Pulse:BaseUrl`, `Atlas:BaseUrl`, and `Sentinel:BaseUrl` are set. `channelProduct` is `instapay` or `pesonet`, with no default rail and no Titan posting. An empty Pulse URL stays NotConfigured. Integrated mode fails closed when any of those URLs is unset. The standalone stand-in is labeled SIMULATED. No settlement, `bank_booked`, or `money_pass`. Live payout is not implemented. |
+| `POST /api/remittance/payout` | Requires an Aegis Bearer access token (M52): signature, issuer, audience, RS256 and lifetime are validated against the Aegis JWKS before any peer call, and revocation is checked by introspection as the `wayfarer-introspection` client. The tenant comes from the token; a `customerRef.tenantId` that differs is refused with 403. Only the validated token is forwarded to Atlas, Sentinel and Pulse; no tenant, subject or decision header is sent. Requires `customerRef`. Toward Pulse at `POST /corp-pay/orchestrate` (the path Summit uses) when `Pulse:BaseUrl`, `Atlas:BaseUrl`, and `Sentinel:BaseUrl` are set. `channelProduct` is `instapay` or `pesonet`, with no default rail and no Titan posting. An empty Pulse URL stays NotConfigured. Integrated mode fails closed when any of those URLs is unset. The standalone stand-in is labeled SIMULATED. No settlement, `bank_booked`, or `money_pass`. Live payout is not implemented. |
+| `POST /api/remittance/binding` | Requires a caller (L20). The customer scheme, ID and tenant are in the JSON body, the tenant must be the caller's, and the ledger reference is returned only when the token's `customerRef` names that customer (otherwise `titan.ledger.not_entitled`). Titan is called with Wayfarer's own client-credentials token (`Titan:ClientId`, `Titan:ClientSecret`), never the caller's. |
 | `GET /health` | Process probe only. `money_pass` is false. The remittance journey stays blocked. |
 
 Regulated deployment modes (`TrudiIntegrated`, `PlatformIntegrated`, `ForeignIntegrated`, `Production`) and `Wayfarer:LivePayout=true` refuse to boot. A Standalone skeleton may boot so the boundary can be read. Booting does not enable payout.
+
+## Security baseline
+
+Every route except `/`, the static assets, `/api/host`, `/health` and the OpenAPI document requires a caller. Outside Development the host refuses to start when:
+
+- `Deployment:Mode` is `Standalone` (X1, decision 117; only Development is exempt, `Testing` and `Staging` are not). The Standalone session routes (`/api/standalone/*`) are mapped only in Development, and a Standalone session expires after `Standalone:SessionMinutes` (default 60, at most 480);
+- `Aegis:Issuer`, `Aegis:JwksUrl` or `Aegis:IntrospectionUrl` is not https, `Aegis:Audience` is empty, or the `wayfarer-introspection` client secret is missing (X2, X5);
+- a listener, or a Pulse, Atlas, Sentinel or Titan URL, is http (X3). The image listens on https 8443 only; the certificate is mounted at deploy time;
+- Titan is configured without `Titan:ClientId` and `Titan:ClientSecret` (L20);
+- `RateLimiting:Enabled` is `false` (X7).
+
+Rate limits (X7) apply after authentication, per client and tenant (per address when anonymous), and answer 429 with `Retry-After`. `X-Forwarded-For` and `X-Forwarded-Proto` are read only when `ForwardedHeaders:KnownProxies` or `ForwardedHeaders:KnownNetworks` names the gateway; with neither set, forwarded headers are ignored. Secrets (`Aegis:IntrospectionClientSecret`, `Titan:ClientSecret`) come from the environment or the secret store, never from committed files.
 
 ## Run
 
@@ -27,11 +40,13 @@ Regulated deployment modes (`TrudiIntegrated`, `PlatformIntegrated`, `ForeignInt
 dotnet run --project src/Wayfarer.Host
 ```
 
-The http launch profile listens on `http://localhost:5230`. This repository has no demo password.
+The launch profile runs in Development on `https://localhost:7213` with the Standalone stand-in. Standalone sessions need `Standalone:SigningKey` (set it with `dotnet user-secrets`). This repository has no demo password.
 
 ```bash
 dotnet test Wayfarer.sln
 ```
+
+CI (`.github/workflows/ci.yml`, M48 / X4) runs the build with warnings as errors, the full test suite, a NuGet vulnerability audit, gitleaks over git history with `.gitleaks.toml`, Trivy filesystem and image scans, Semgrep, SonarQube (`/d:sonar.token` from the `SONAR_TOKEN` secret, quality gate awaited), and a CycloneDX SBOM per image digest. A missing scanner token fails the job. Dependabot covers NuGet, GitHub Actions and the Docker base images.
 
 ## Non-goals
 

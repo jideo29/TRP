@@ -29,7 +29,17 @@ public sealed class OpenApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(paths.TryGetProperty("/health", out _));
         var payout = paths.GetProperty("/api/remittance/payout").GetProperty("post");
         Assert.True(payout.GetProperty("responses").TryGetProperty("503", out _));
+        Assert.True(payout.GetProperty("responses").TryGetProperty("401", out _));
+        Assert.True(payout.GetProperty("responses").TryGetProperty("403", out _));
+        Assert.True(payout.GetProperty("responses").TryGetProperty("429", out _));
         Assert.False(payout.GetProperty("responses").TryGetProperty("200", out _));
+        // M52: payout requires Bearer; it is not optional.
+        var requirements = payout.GetProperty("security").EnumerateArray().ToList();
+        Assert.Single(requirements);
+        Assert.True(requirements[0].TryGetProperty("Bearer", out _));
+        Assert.False(paths.TryGetProperty("/api/remittance/binding", out _));
+        Assert.False(root.TryGetProperty("security", out var documentSecurity) && documentSecurity.GetArrayLength() > 0
+            && documentSecurity.EnumerateArray().Any(r => !r.EnumerateObject().Any()));
 
         Assert.Equal("/", root.GetProperty("servers")[0].GetProperty("url").GetString());
         Assert.DoesNotContain("http://", json, StringComparison.OrdinalIgnoreCase);
@@ -64,8 +74,10 @@ public sealed class OpenApiTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Swagger_ui_returns_404_in_production()
     {
-        using var factory = FactoryFor(Environments.Production, exposeUi: false);
-        var client = factory.CreateClient();
+        var aegis = new FakeAegis();
+        using var factory = SecureHost.Create(aegis, Environments.Production);
+        // Signed in, so an unmapped path answers 404 rather than the fallback policy's 401.
+        var client = factory.Client(aegis.Mint());
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/swagger")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/swagger/index.html")).StatusCode);
@@ -78,8 +90,9 @@ public sealed class OpenApiTests : IClassFixture<WebApplicationFactory<Program>>
     [Fact]
     public async Task Swagger_ui_can_be_enabled_outside_development_by_config()
     {
-        using var factory = FactoryFor(Environments.Production, exposeUi: true);
-        var client = factory.CreateClient();
+        using var factory = SecureHost.Create(
+            new FakeAegis(), Environments.Production, new Dictionary<string, string?> { ["OpenApi:ExposeUi"] = "true" });
+        var client = factory.Client();
 
         var response = await client.GetAsync("/swagger/index.html");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -87,14 +100,6 @@ public sealed class OpenApiTests : IClassFixture<WebApplicationFactory<Program>>
 
     private HttpClient DevelopmentClient() => _factory.CreateClient();
 
-    private WebApplicationFactory<Program> FactoryFor(string environment, bool exposeUi) =>
-        _factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment(environment);
-            builder.UseSetting("OpenApi:ExposeUi", exposeUi ? "true" : "false");
-            builder.UseSetting("Deployment:Mode", "Standalone");
-            builder.UseSetting("Wayfarer:LivePayout", "false");
-        });
 
     private static string Normalize(string json) => json.Replace("\r\n", "\n").Trim();
 

@@ -55,7 +55,8 @@ internal static class FailClosedOpenApiDocument
             Version = "v1",
             Description =
                 "Fail-closed remittance host. Live payout is not implemented and the payout operation does not move money. "
-                + "HTTP Bearer is declared for JWT access tokens. The routes in this document do not require a token."
+                + "The payout operation requires an Aegis Bearer access token (validated signature, issuer, audience, algorithm, "
+                + "lifetime and revocation); the tenant comes from the token. /api/host and /health do not require a token."
         };
 
         document.Components ??= new OpenApiComponents();
@@ -68,14 +69,8 @@ internal static class FailClosedOpenApiDocument
             Description = "HTTP Bearer authentication with a JWT access token."
         };
 
-        document.Security =
-        [
-            new OpenApiSecurityRequirement(),
-            new OpenApiSecurityRequirement
-            {
-                [new OpenApiSecuritySchemeReference("Bearer", document)] = []
-            }
-        ];
+        // M52: no document-wide optional requirement; payout declares Bearer as required below.
+        document.Security = null;
 
         document.Servers = [new OpenApiServer { Url = "/" }];
 
@@ -85,10 +80,19 @@ internal static class FailClosedOpenApiDocument
             && operation.Responses is not null
             && operation.Responses.ContainsKey("503"))
         {
-            foreach (var key in operation.Responses.Keys.Where(key => key != "503").ToArray())
+            string[] kept = ["503", "401", "403", "429"];
+            foreach (var key in operation.Responses.Keys.Where(key => !kept.Contains(key)).ToArray())
             {
                 operation.Responses.Remove(key);
             }
+
+            operation.Security =
+            [
+                new OpenApiSecurityRequirement
+                {
+                    [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+                }
+            ];
         }
     }
 }

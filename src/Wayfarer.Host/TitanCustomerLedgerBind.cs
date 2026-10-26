@@ -1,12 +1,17 @@
 using System.Net;
 using System.Text.Json;
+using System.Net.Http.Headers;
 using Microsoft.Extensions.Configuration;
+using Wayfarer.Security;
 
 namespace Wayfarer;
 
 /// <summary>
 /// Resolves an ADR-003 customer ref and a Titan ledger account ref.
 /// This bind does not submit a posting instruction and does not write a local ledger row.
+/// L20 / ASVS 1.2.2: every Titan call carries Wayfarer's own client-credentials token
+/// (<see cref="ITitanAccessTokenSource"/>); without one no Titan call is made and the result is NotConfigured.
+/// The path shape (<c>refs/{scheme}/{id}</c>, <c>accounts/{scheme}/{id}</c>) is Titan's API.
 /// </summary>
 public interface ITitanCustomerLedgerBind
 {
@@ -48,28 +53,39 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
     private readonly string? _customerBaseUrl;
     private readonly string? _ledgerBaseUrl;
     private readonly HttpMessageHandler? _handler;
+    private readonly ITitanAccessTokenSource? _tokens;
 
-    public TitanCustomerLedgerBind(IConfiguration configuration, HttpMessageHandler? handler = null)
+    public TitanCustomerLedgerBind(IConfiguration configuration, HttpMessageHandler? handler = null, ITitanAccessTokenSource? tokens = null)
     {
         _mode = configuration["Deployment:Mode"];
-        _customerBaseUrl = configuration["Titan:CustomerDirectory:BaseUrl"];
-        _ledgerBaseUrl = configuration["Titan:Ledger:BaseUrl"];
+        _customerBaseUrl = configuration[TitanClientCredentials.CustomerDirectoryUrlSetting];
+        _ledgerBaseUrl = configuration[TitanClientCredentials.LedgerUrlSetting];
         _handler = handler;
+        _tokens = tokens;
     }
 
-    public Task<TitanCustomerBindResult> ResolveCustomerAsync(
+    public async Task<TitanCustomerBindResult> ResolveCustomerAsync(
         string scheme,
         string id,
         string tenantId,
         CancellationToken cancellationToken) =>
-        ResolveCustomerAsync(_mode, _customerBaseUrl, scheme, id, tenantId, _handler, cancellationToken);
+        await ResolveCustomerAsync(_mode, _customerBaseUrl, scheme, id, tenantId,
+            await TokenAsync(_customerBaseUrl, cancellationToken), _handler, cancellationToken);
 
-    public Task<TitanLedgerBindResult> ResolveLedgerAsync(
+    public async Task<TitanLedgerBindResult> ResolveLedgerAsync(
         string scheme,
         string id,
         string tenantId,
         CancellationToken cancellationToken) =>
-        ResolveLedgerAsync(_mode, _ledgerBaseUrl, scheme, id, tenantId, _handler, cancellationToken);
+        await ResolveLedgerAsync(_mode, _ledgerBaseUrl, scheme, id, tenantId,
+            await TokenAsync(_ledgerBaseUrl, cancellationToken), _handler, cancellationToken);
+
+    private async Task<string?> TokenAsync(string? baseUrl, CancellationToken cancellationToken) =>
+        IsAbsoluteHttp(baseUrl) && _tokens is not null ? await _tokens.GetAsync(cancellationToken) : null;
+
+    /// <summary>L20: the ledger reference is withheld from a caller whose token does not name this customer.</summary>
+    public static TitanLedgerBindResult LedgerWithheld() =>
+        new(TitanBindOutcome.Refused, "titan.ledger.not_entitled", "WITHHELD", null, false);
 
     public static bool IsStandalone(string? mode) =>
         string.Equals(mode?.Trim(), "Standalone", StringComparison.OrdinalIgnoreCase);
@@ -80,6 +96,7 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
         string scheme,
         string id,
         string tenantId,
+        string? accessToken,
         HttpMessageHandler? handler,
         CancellationToken cancellationToken)
     {
@@ -95,11 +112,17 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
                 : new TitanCustomerBindResult(TitanBindOutcome.NotConfigured, "titan.customer.not_configured", "NOT_CONFIGURED", null, null, null, false);
         }
 
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            return new TitanCustomerBindResult(TitanBindOutcome.NotConfigured, "titan.customer.credential_missing", "NOT_CONFIGURED", null, null, null, false);
+        }
+
         try
         {
             using var response = await SendAsync(
                 handler,
                 baseUrl!,
+                accessToken,
                 "api/customer-directory/refs/" + Uri.EscapeDataString(scheme) + "/" + Uri.EscapeDataString(id) + "?tenantId=" + Uri.EscapeDataString(tenantId),
                 cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -134,6 +157,7 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
         string scheme,
         string id,
         string tenantId,
+        string? accessToken,
         HttpMessageHandler? handler,
         CancellationToken cancellationToken)
     {
@@ -149,11 +173,17 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
                 : new TitanLedgerBindResult(TitanBindOutcome.NotConfigured, "titan.ledger.not_configured", "NOT_CONFIGURED", null, false);
         }
 
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            return new TitanLedgerBindResult(TitanBindOutcome.NotConfigured, "titan.ledger.credential_missing", "NOT_CONFIGURED", null, false);
+        }
+
         try
         {
             using var response = await SendAsync(
                 handler,
                 baseUrl!,
+                accessToken,
                 "api/ledger/accounts/" + Uri.EscapeDataString(scheme) + "/" + Uri.EscapeDataString(id) + "?tenantId=" + Uri.EscapeDataString(tenantId),
                 cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -180,12 +210,15 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
     private static async Task<HttpResponseMessage> SendAsync(
         HttpMessageHandler? handler,
         string baseUrl,
+        string accessToken,
         string relative,
         CancellationToken cancellationToken)
     {
         using var client = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
         client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
-        return await client.GetAsync(relative, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, relative);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return await client.SendAsync(request, cancellationToken);
     }
 
     private static bool HasRef(string scheme, string id, string tenantId) =>

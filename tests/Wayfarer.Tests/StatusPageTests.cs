@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -60,7 +61,15 @@ public sealed class StatusPageTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task Intent_route_is_not_on_this_host()
     {
-        var response = await _factory.CreateClient().GetAsync("/api/remittance/intents");
+        // The fallback policy answers 401 to an anonymous caller on any unmapped path; a signed-in caller sees 404.
+        var client = _factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("Standalone:SigningKey", "wayfarer-standalone-test-key")).CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/remittance/intents")).StatusCode);
+
+        using var session = await client.PostAsJsonAsync("/api/standalone/session", new { operatorId = "wayfarer-operator", tenantId = "tenant-1" });
+        var token = (await session.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>()).GetProperty("token").GetString();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        var response = await client.GetAsync("/api/remittance/intents");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -68,14 +77,10 @@ public sealed class StatusPageTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task Status_page_stays_available_when_swagger_is_hidden()
     {
-        using var factory = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment(Environments.Production);
-            builder.UseSetting("OpenApi:ExposeUi", "false");
-            builder.UseSetting("Deployment:Mode", "Standalone");
-            builder.UseSetting("Wayfarer:LivePayout", "false");
-        });
-        var client = factory.CreateClient();
+        var aegis = new FakeAegis();
+        using var factory = SecureHost.Create(aegis, Environments.Production);
+        // Signed in, so an unmapped path answers 404 rather than the fallback policy's 401.
+        var client = factory.Client(aegis.Mint());
 
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/swagger/index.html")).StatusCode);
