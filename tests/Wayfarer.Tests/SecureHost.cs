@@ -15,7 +15,7 @@ using Wayfarer.Security;
 namespace Wayfarer.Tests;
 
 /// <summary>
-/// Synthetic Aegis for host tests: an RSA key served as JWKS and an introspection endpoint that only answers the
+/// Synthetic Aegis for host tests: an EC P-256 key (Aegis signs ES256) and an RSA key served as JWKS and an introspection endpoint that only answers the
 /// <c>wayfarer-introspection</c> client over HTTP Basic (no caller token as Bearer, no tenant header).
 /// </summary>
 public sealed class FakeAegis : HttpMessageHandler
@@ -26,8 +26,10 @@ public sealed class FakeAegis : HttpMessageHandler
     public const string IntrospectionUrl = Issuer + "/connect/introspect";
     public const string IntrospectionSecret = "synthetic-introspection-secret";
     public const string KeyId = "synthetic-key-1";
+    public const string EcKeyId = "synthetic-ec-key-1";
 
     private readonly RsaSecurityKey _key;
+    private readonly ECDsaSecurityKey _ecKey = new(ECDsa.Create(ECCurve.NamedCurves.nistP256)) { KeyId = EcKeyId };
 
     public FakeAegis()
     {
@@ -61,7 +63,8 @@ public sealed class FakeAegis : HttpMessageHandler
         string? customerRef = """{"scheme":"titan-cif","id":"cif-1","tenantId":"tenant-1"}""",
         TimeSpan? lifetime = null,
         SecurityKey? signWith = null,
-        string? audience = null)
+        string? audience = null,
+        bool es256 = false)
     {
         var claims = new Dictionary<string, object>
         {
@@ -83,7 +86,9 @@ public sealed class FakeAegis : HttpMessageHandler
             Expires = expires,
             Claims = claims,
             TokenType = AegisTokenRules.AccessTokenType,
-            SigningCredentials = new SigningCredentials(signWith ?? _key, SecurityAlgorithms.RsaSha256),
+            SigningCredentials = es256
+                ? new SigningCredentials(signWith ?? _ecKey, SecurityAlgorithms.EcdsaSha256)
+                : new SigningCredentials(signWith ?? _key, SecurityAlgorithms.RsaSha256),
         });
     }
 
@@ -94,9 +99,14 @@ public sealed class FakeAegis : HttpMessageHandler
         {
             Interlocked.Increment(ref _jwksFetches);
             var jwk = JsonWebKeyConverter.ConvertFromRSASecurityKey(_key);
+            var q = _ecKey.ECDsa.ExportParameters(false).Q;
             var json = JsonSerializer.Serialize(new
             {
-                keys = new[] { new { kty = jwk.Kty, kid = jwk.Kid, use = "sig", alg = "RS256", n = jwk.N, e = jwk.E } }
+                keys = new object[]
+                {
+                    new { kty = "EC", kid = EcKeyId, use = "sig", alg = "ES256", crv = "P-256", x = Base64UrlEncoder.Encode(q.X), y = Base64UrlEncoder.Encode(q.Y) },
+                    new { kty = jwk.Kty, kid = jwk.Kid, use = "sig", alg = "RS256", n = jwk.N, e = jwk.E },
+                }
             });
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
         }

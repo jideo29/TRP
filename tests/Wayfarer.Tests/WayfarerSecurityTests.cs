@@ -67,7 +67,42 @@ public sealed class WayfarerSecurityTests
     }
 
     [Fact]
-    public async Task Only_rs256_is_accepted()
+    public async Task Es256_tokens_signed_with_the_aegis_ec_key_are_accepted()
+    {
+        // Round 3: Aegis (TISP KeySetSessionTokenSigner) signs ES256 on P-256 and publishes EC keys in its JWKS.
+        var aegis = new FakeAegis();
+        await using var factory = SecureHost.Create(aegis);
+        var token = aegis.Mint(es256: true);
+        Assert.Equal("ES256", new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(token).Alg);
+        using (var client = factory.Client(token))
+        {
+            var response = await client.PostAsync("/api/remittance/payout", PayoutBody());
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        }
+
+        // An ES256 signature from another P-256 key under the published kid, or naming the RSA key, is refused.
+        var otherEc = new ECDsaSecurityKey(ECDsa.Create(ECCurve.NamedCurves.nistP256)) { KeyId = FakeAegis.EcKeyId };
+        foreach (var refused in new[] { aegis.Mint(es256: true, signWith: otherEc), aegis.Mint(es256: true, signWith: new ECDsaSecurityKey(ECDsa.Create(ECCurve.NamedCurves.nistP256)) { KeyId = FakeAegis.KeyId }) })
+        {
+            using var client = factory.Client(refused);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task A_token_without_a_tenant_is_refused_even_when_the_body_names_one()
+    {
+        var aegis = new FakeAegis();
+        await using var factory = SecureHost.Create(aegis);
+        using var client = factory.Client(aegis.Mint(tenant: "", customerRef: null));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/remittance/payout", PayoutBody(tenant: "tenant-1"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/remittance/binding",
+            new { scheme = "titan-cif", id = "cif-1", tenantId = "tenant-1" })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Only_es256_and_rs256_are_accepted()
     {
         var aegis = new FakeAegis();
         await using var factory = SecureHost.Create(aegis);

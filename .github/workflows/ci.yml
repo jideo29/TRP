@@ -294,20 +294,38 @@ jobs:
           echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
           "${RUNNER_TEMP}/bin/trivy" version
 
+      - name: Install syft
+        env:
+          SYFT_VERSION: "1.55.0"
+          # From https://github.com/anchore/syft/releases/download/v1.55.0/syft_1.55.0_checksums.txt
+          SYFT_SHA256: "bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d"
+        run: |
+          set -euo pipefail
+          ARCHIVE="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${ARCHIVE}" -o "${ARCHIVE}"
+          echo "${SYFT_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar -xzf "${ARCHIVE}" syft
+          mkdir -p "${RUNNER_TEMP}/bin" && mv syft "${RUNNER_TEMP}/bin/syft"
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/bin/syft" version
+
       - name: Build image (local only, never pushed)
         run: docker build -f src/Wayfarer.Host/Dockerfile -t "wayfarer-host:${GITHUB_SHA}" .
 
       - name: Trivy image scan (HIGH/CRITICAL)
         run: trivy image --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 "wayfarer-host:${GITHUB_SHA}"
 
-      - name: CycloneDX SBOM and image archive named by image digest
+      # Round 3: the SBOM is a syft CycloneDX document of the image archive saved for this digest, so the SBOM, the
+      # scanned image and the signed archive are the same bytes.
+      - name: Syft CycloneDX SBOM and image archive named by image digest
         run: |
           set -euo pipefail
           DIGEST="$(docker image inspect --format '{{.Id}}' "wayfarer-host:${GITHUB_SHA}" | sed 's/^sha256://')"
           echo "IMAGE_DIGEST=${DIGEST}" >> "${GITHUB_ENV}"
           mkdir -p sbom image
-          trivy image --format cyclonedx --output "sbom/wayfarer-host-sha256-${DIGEST}.cdx.json" "wayfarer-host:${GITHUB_SHA}"
           docker save "wayfarer-host:${GITHUB_SHA}" -o "image/wayfarer-host-sha256-${DIGEST}.tar"
+          syft scan "docker-archive:image/wayfarer-host-sha256-${DIGEST}.tar" --output "cyclonedx-json=sbom/wayfarer-host-sha256-${DIGEST}.cdx.json"
+          test -s "sbom/wayfarer-host-sha256-${DIGEST}.cdx.json"
           sha256sum "image/wayfarer-host-sha256-${DIGEST}.tar" | tee "image/wayfarer-host-sha256-${DIGEST}.tar.sha256"
           ls -l sbom image
 
