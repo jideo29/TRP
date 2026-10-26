@@ -10,6 +10,11 @@ namespace Wayfarer.Tests;
 /// not images and need no digest. P-3: the <c># escape=</c> parser directive at the top of the file sets the line
 /// continuation character (so a backtick continuation cannot hide COPY --from), and ONBUILD instructions are checked
 /// too. An ONBUILD trigger runs in a later build whose stages this file cannot see, so its --from must be a digest.
+/// P-5: heredocs are recognised only on RUN, COPY and ADD, as BuildKit does. Their body lines are content, so a
+/// body line can neither hide nor declare anything (a "FROM scratch AS alpine" body line does not make alpine a stage).
+/// Anywhere else (LABEL x="&lt;&lt;EOF", ENV, a quoted "&lt;&lt;EOF" word) the text is not a heredoc and the lines after it
+/// are still checked. A heredoc on ONBUILD, an unterminated heredoc and a terminator line that matches only after
+/// trimming spaces are refused (fail closed).
 /// </summary>
 public sealed class DockerfilePinningTests
 {
@@ -104,6 +109,15 @@ public sealed class DockerfilePinningTests
         { $"FROM base{Digest} AS build\nFROM base{Digest}\nONBUILD COPY --from=build /a /b\n", "ONBUILD COPY --from=build" },
         { $"FROM base{Digest}\nONBUILD ADD \\\n  --from=0 /a /b\n", "ONBUILD COPY --from=0" },
         { $"FROM base{Digest}\nONBUILD FROM alpine\n", "ONBUILD FROM" },
+        { $"FROM base{Digest}\nLABEL x=\"<<EOF\"\nFROM alpine:3.20\nEOF\n", "FROM alpine:3.20" },
+        { $"FROM base{Digest}\nLABEL x=<<EOF\nFROM alpine:3.20\nEOF\n", "FROM alpine:3.20" },
+        { $"FROM base{Digest}\nENV A <<EOF\nCOPY --from=busybox /a /b\nEOF\n", "COPY --from=busybox" },
+        { $"FROM base{Digest}\nRUN echo \"a <<EOF b\"\nFROM alpine\nEOF\n", "FROM alpine" },
+        { $"FROM base{Digest}\nRUN echo '<<EOF'\nFROM alpine\nEOF\n", "FROM alpine" },
+        { $"FROM base{Digest}\nRUN <<EOF\nFROM scratch AS alpine\nEOF\nCOPY --from=alpine /a /b\n", "COPY --from=alpine" },
+        { $"FROM base{Digest}\nRUN <<-EOF\n\techo hi\n\tEOF\nFROM alpine\n", "FROM alpine" },
+        { $"FROM base{Digest}\nCOPY <<A <<\"B\" /dst/\na\nA\nb\nB\nFROM alpine\n", "FROM alpine" },
+        { $"FROM base{Digest}\nONBUILD RUN <<EOF\necho hi\nEOF\n", "ONBUILD heredoc" },
     };
 
     [Theory]
@@ -147,6 +161,41 @@ public sealed class DockerfilePinningTests
 
         Assert.Contains(problems, p => p.StartsWith("COPY --from=0 ", StringComparison.Ordinal));
         Assert.Empty(UnpinnedReferences($"# escape=`\nFROM base{Digest} AS build\nFROM base{Digest}\nCOPY `\n  --from=build /a /b\n"));
+    }
+
+    [Fact]
+    public void Heredoc_bodies_on_run_copy_and_add_are_content_not_instructions()
+    {
+        var dockerfile = $"FROM base{Digest}\nRUN <<EOF\nFROM alpine\nCOPY --from=alpine /a /b\nEOF\nCOPY <<\"X\" /a\nFROM busybox\nX\nADD 2<<-Y /b\n\tFROM busybox\n\tY\nRUN --mount=type=cache,target=/c python3 <<'PY' > /out\nRUN --mount=from=busybox,target=/x ls\nPY\ncopy <<eof /c\nFROM alpine\neof\n";
+
+        Assert.Empty(UnpinnedReferences(dockerfile));
+    }
+
+    [Fact]
+    public void Heredoc_is_recognised_only_on_run_copy_and_add()
+    {
+        Assert.NotEmpty(Heredocs("RUN cat <<EOF"));
+        Assert.NotEmpty(Heredocs("copy <<-EOF /a"));
+        Assert.NotEmpty(Heredocs("ADD 2<<\"EOF\" /a"));
+        Assert.Empty(Heredocs("LABEL x=\"<<EOF\""));
+        Assert.Empty(Heredocs("LABEL x=<<EOF"));
+        Assert.Empty(Heredocs("ENV A <<EOF"));
+        Assert.Empty(Heredocs("ONBUILD RUN <<EOF"));
+        Assert.Empty(Heredocs("RUN echo \"<<EOF\""));
+        Assert.Empty(Heredocs("RUN echo 'x <<EOF'"));
+        Assert.Empty(Heredocs("RUN cat<<EOF"));
+        Assert.Equal(new List<(string Name, bool StripTabs)> { ("A", false), ("B", true) }, Heredocs("COPY <<A <<-'B' /dst/"));
+    }
+
+    [Theory]
+    [InlineData("FROM base\nRUN <<EOF\necho hi\n")]
+    [InlineData("FROM base\nRUN <<EOF\necho hi\nEOF \nFROM alpine\n")]
+    [InlineData("FROM base\nRUN <<EOF\necho hi\n  EOF\nFROM alpine\n")]
+    [InlineData("FROM base\nRUN <<-EOF\necho hi\n EOF\nFROM alpine\n")]
+    [InlineData("FROM base\nRUN <<\"\"\necho\n")]
+    public void Unterminated_or_ambiguous_heredocs_are_refused(string dockerfile)
+    {
+        Assert.Throws<InvalidOperationException>(() => UnpinnedReferences(dockerfile));
     }
 
     internal static bool IsDockerfileName(string fileName) => DockerfileName.IsMatch(fileName);
@@ -200,6 +249,13 @@ public sealed class DockerfilePinningTests
                 if (keyword is "FROM" or "ONBUILD" or "MAINTAINER")
                 {
                     problems.Add($"ONBUILD {keyword} is not allowed ({instruction})");
+                    continue;
+                }
+
+                // P-5: a heredoc is never recognised on ONBUILD, so one there is refused rather than guessed at.
+                if (keyword is "RUN" or "COPY" or "ADD" && HeredocWords(string.Join(' ', tokens)).Any())
+                {
+                    problems.Add($"ONBUILD heredoc is not allowed ({instruction})");
                     continue;
                 }
             }
@@ -318,8 +374,27 @@ public sealed class DockerfilePinningTests
         var current = new List<string>();
         var lines = dockerfile.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         var escape = EscapeCharacter(lines);
+        var bodies = new Queue<(string Name, bool StripTabs)>();
         foreach (var raw in lines)
         {
+            if (bodies.Count > 0)
+            {
+                // P-5: a heredoc body line is content. It ends only on a line that is exactly the name (after leading
+                // tabs for <<-). A line that matches only after trimming spaces is refused rather than guessed at.
+                var (name, stripTabs) = bodies.Peek();
+                var body = stripTabs ? raw.TrimStart('\t') : raw;
+                if (body == name)
+                {
+                    bodies.Dequeue();
+                }
+                else if (body.Trim() == name)
+                {
+                    throw new InvalidOperationException($"Ambiguous heredoc terminator '{raw}' for '{name}'.");
+                }
+
+                continue;
+            }
+
             var line = raw.Trim();
             if (line.StartsWith('#'))
             {
@@ -339,14 +414,100 @@ public sealed class DockerfilePinningTests
 
             if (!continues && current.Count > 0)
             {
-                yield return string.Join(' ', current);
+                var instruction = string.Join(' ', current);
                 current.Clear();
+                foreach (var heredoc in Heredocs(instruction))
+                {
+                    bodies.Enqueue(heredoc);
+                }
+
+                yield return instruction;
             }
+        }
+
+        if (bodies.Count > 0)
+        {
+            throw new InvalidOperationException($"Unterminated heredoc '{bodies.Peek().Name}'.");
         }
 
         if (current.Count > 0)
         {
             yield return string.Join(' ', current);
+        }
+    }
+
+    private static readonly Regex HeredocWord = new(@"^\d*<<(-?)([^<]*)$", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// P-5: the heredocs an instruction opens, in order. As in BuildKit, only RUN, COPY and ADD open heredocs, and only
+    /// an unquoted shell word of the form [n]&lt;&lt;[-]NAME (NAME may be quoted) is one.
+    /// </summary>
+    internal static List<(string Name, bool StripTabs)> Heredocs(string instruction)
+    {
+        var keyword = instruction.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToUpperInvariant();
+        return keyword is "RUN" or "COPY" or "ADD" ? HeredocWords(instruction).ToList() : [];
+    }
+
+    private static IEnumerable<(string Name, bool StripTabs)> HeredocWords(string instruction)
+    {
+        foreach (var word in Words(instruction).Skip(1))
+        {
+            var match = HeredocWord.Match(word);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var name = match.Groups[2].Value.Replace("\"", string.Empty, StringComparison.Ordinal).Replace("'", string.Empty, StringComparison.Ordinal);
+            if (name.Length == 0)
+            {
+                throw new InvalidOperationException($"Heredoc without a name ({instruction}).");
+            }
+
+            yield return (name, match.Groups[1].Value == "-");
+        }
+    }
+
+    /// <summary>Shell words with quotes kept (as BuildKit's raw-quote lexer splits them).</summary>
+    private static IEnumerable<string> Words(string text)
+    {
+        var word = new System.Text.StringBuilder();
+        char? quote = null;
+        var inWord = false;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (quote is null && char.IsWhiteSpace(c))
+            {
+                if (inWord)
+                {
+                    yield return word.ToString();
+                    word.Clear();
+                    inWord = false;
+                }
+
+                continue;
+            }
+
+            inWord = true;
+            word.Append(c);
+            if (c == '\\' && quote != '\'' && i + 1 < text.Length)
+            {
+                word.Append(text[++i]);
+            }
+            else if (quote is null && c is '"' or '\'')
+            {
+                quote = c;
+            }
+            else if (quote == c)
+            {
+                quote = null;
+            }
+        }
+
+        if (inWord)
+        {
+            yield return word.ToString();
         }
     }
 
