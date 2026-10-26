@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using Microsoft.Extensions.Configuration;
 using Wayfarer.Security;
 
@@ -11,13 +12,15 @@ namespace Wayfarer;
 /// This bind does not submit a posting instruction and does not write a local ledger row.
 /// L20 / ASVS 1.2.2: every Titan call carries Wayfarer's own client-credentials token
 /// (<see cref="ITitanAccessTokenSource"/>); without one no Titan call is made and the result is NotConfigured.
-/// The path shape (<c>refs/{scheme}/{id}</c>, <c>accounts/{scheme}/{id}</c>) is Titan's API.
+/// ASVS 8.3.1: the CustomerRef travels only in the JSON body of Titan's CustomerDirectoryPort lookups
+/// (<c>POST api/customer-directory/refs/lookup</c> and <c>POST api/customer-directory/ledger-account/lookup</c>,
+/// BiaB <c>docs/wave-a-customer-directory-port.md</c>); never in a URL or query string. Every error fails closed.
 /// </summary>
 public interface ITitanCustomerLedgerBind
 {
     Task<TitanCustomerBindResult> ResolveCustomerAsync(string scheme, string id, string tenantId, CancellationToken cancellationToken);
 
-    Task<TitanLedgerBindResult> ResolveLedgerAsync(string scheme, string id, string tenantId, CancellationToken cancellationToken);
+    Task<TitanLedgerBindResult> ResolveLedgerAsync(string scheme, string id, string tenantId, string? currencyCode, CancellationToken cancellationToken);
 }
 
 public enum TitanBindOutcome
@@ -48,6 +51,10 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
 {
     public const string CustomerStandInLabel = "TITAN_CUSTOMER_STANDALONE_STAND_IN";
     public const string LedgerStandInLabel = "TITAN_LEDGER_STANDALONE_STAND_IN";
+    public const string CustomerRefLookupPath = "api/customer-directory/refs/lookup";
+    public const string LedgerAccountLookupPath = "api/customer-directory/ledger-account/lookup";
+    public const string TenantMismatchCode = "TENANT_MISMATCH";
+    public const string LedgerAccountAmbiguousCode = "LEDGER_ACCOUNT_AMBIGUOUS";
 
     private readonly string? _mode;
     private readonly string? _customerBaseUrl;
@@ -76,8 +83,9 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
         string scheme,
         string id,
         string tenantId,
+        string? currencyCode,
         CancellationToken cancellationToken) =>
-        await ResolveLedgerAsync(_mode, _ledgerBaseUrl, scheme, id, tenantId,
+        await ResolveLedgerAsync(_mode, _ledgerBaseUrl, scheme, id, tenantId, currencyCode,
             await TokenAsync(_ledgerBaseUrl, cancellationToken), _handler, cancellationToken);
 
     private async Task<string?> TokenAsync(string? baseUrl, CancellationToken cancellationToken) =>
@@ -102,7 +110,7 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
     {
         if (!HasRef(scheme, id, tenantId))
         {
-            return new TitanCustomerBindResult(TitanBindOutcome.Refused, "titan.customer.refused", "REFUSED", null, null, null, false);
+            return CustomerRefused("titan.customer.refused");
         }
 
         if (!IsAbsoluteHttp(baseUrl))
@@ -119,35 +127,41 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
 
         try
         {
-            using var response = await SendAsync(
+            using var response = await PostAsync(
                 handler,
                 baseUrl!,
                 accessToken,
-                "api/customer-directory/refs/" + Uri.EscapeDataString(scheme) + "/" + Uri.EscapeDataString(id) + "?tenantId=" + Uri.EscapeDataString(tenantId),
+                CustomerRefLookupPath,
+                new Dictionary<string, string> { ["scheme"] = scheme, ["id"] = id, ["tenantId"] = tenantId },
                 cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return CustomerRefused("titan.customer.not_found");
+            }
+
+            if (response.StatusCode == HttpStatusCode.Forbidden && ErrorCode(body) == TenantMismatchCode)
+            {
+                return CustomerRefused("titan.customer.tenant_mismatch");
+            }
+
             if (response.StatusCode != HttpStatusCode.OK)
             {
-                return new TitanCustomerBindResult(TitanBindOutcome.Refused, "titan.customer.refused", "REFUSED", null, null, null, false);
+                return CustomerRefused("titan.customer.refused");
             }
 
             using var document = JsonDocument.Parse(body);
-            var root = document.RootElement;
-            var boundScheme = ReadString(root, "scheme");
-            var boundId = ReadString(root, "id");
-            var boundTenant = ReadString(root, "tenantId");
-            if (!string.Equals(boundScheme, scheme, StringComparison.Ordinal)
-                || !string.Equals(boundId, id, StringComparison.Ordinal)
-                || !string.Equals(boundTenant, tenantId, StringComparison.Ordinal))
+            if (!TryReadData(document.RootElement, out var data)
+                || !SameRef(data, scheme, id, tenantId))
             {
-                return new TitanCustomerBindResult(TitanBindOutcome.Refused, "titan.customer.refused", "REFUSED", null, null, null, false);
+                return CustomerRefused("titan.customer.refused");
             }
 
-            return new TitanCustomerBindResult(TitanBindOutcome.Bound, "titan.customer.bound", "TITAN", boundScheme, boundId, boundTenant, false);
+            return new TitanCustomerBindResult(TitanBindOutcome.Bound, "titan.customer.bound", "TITAN", scheme, id, tenantId, false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
-            return new TitanCustomerBindResult(TitanBindOutcome.Refused, "titan.customer.refused", "REFUSED", null, null, null, false);
+            return CustomerRefused("titan.customer.refused");
         }
     }
 
@@ -157,13 +171,14 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
         string scheme,
         string id,
         string tenantId,
+        string? currencyCode,
         string? accessToken,
         HttpMessageHandler? handler,
         CancellationToken cancellationToken)
     {
         if (!HasRef(scheme, id, tenantId))
         {
-            return new TitanLedgerBindResult(TitanBindOutcome.Refused, "titan.ledger.refused", "REFUSED", null, false);
+            return LedgerRefused("titan.ledger.refused");
         }
 
         if (!IsAbsoluteHttp(baseUrl))
@@ -180,45 +195,112 @@ public sealed class TitanCustomerLedgerBind : ITitanCustomerLedgerBind
 
         try
         {
-            using var response = await SendAsync(
-                handler,
-                baseUrl!,
-                accessToken,
-                "api/ledger/accounts/" + Uri.EscapeDataString(scheme) + "/" + Uri.EscapeDataString(id) + "?tenantId=" + Uri.EscapeDataString(tenantId),
-                cancellationToken);
+            var request = new Dictionary<string, string> { ["scheme"] = scheme, ["id"] = id, ["tenantId"] = tenantId };
+            if (!string.IsNullOrWhiteSpace(currencyCode))
+            {
+                request["currencyCode"] = currencyCode.Trim();
+            }
+
+            using var response = await PostAsync(handler, baseUrl!, accessToken, LedgerAccountLookupPath, request, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return LedgerRefused("titan.ledger.not_found");
+            }
+
+            if (response.StatusCode == HttpStatusCode.Conflict && ErrorCode(body) == LedgerAccountAmbiguousCode)
+            {
+                return LedgerRefused("titan.ledger.ambiguous");
+            }
+
+            if (response.StatusCode == HttpStatusCode.Forbidden && ErrorCode(body) == TenantMismatchCode)
+            {
+                return LedgerRefused("titan.ledger.tenant_mismatch");
+            }
+
             if (response.StatusCode != HttpStatusCode.OK)
             {
-                return new TitanLedgerBindResult(TitanBindOutcome.Refused, "titan.ledger.refused", "REFUSED", null, false);
+                return LedgerRefused("titan.ledger.refused");
             }
 
             using var document = JsonDocument.Parse(body);
-            var ledgerAccountRef = ReadString(document.RootElement, "ledgerAccountRef");
+            if (!TryReadData(document.RootElement, out var data) || !SameRef(data, scheme, id, tenantId))
+            {
+                return LedgerRefused("titan.ledger.refused");
+            }
+
+            var ledgerAccountRef = ReadString(data, "ledgerAccountRef");
             if (string.IsNullOrWhiteSpace(ledgerAccountRef))
             {
-                return new TitanLedgerBindResult(TitanBindOutcome.Refused, "titan.ledger.refused", "REFUSED", null, false);
+                return LedgerRefused("titan.ledger.refused");
             }
 
             return new TitanLedgerBindResult(TitanBindOutcome.Bound, "titan.ledger.bound", "TITAN", ledgerAccountRef, false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException)
         {
-            return new TitanLedgerBindResult(TitanBindOutcome.Refused, "titan.ledger.refused", "REFUSED", null, false);
+            return LedgerRefused("titan.ledger.refused");
         }
     }
 
-    private static async Task<HttpResponseMessage> SendAsync(
+    private static TitanCustomerBindResult CustomerRefused(string code) =>
+        new(TitanBindOutcome.Refused, code, "REFUSED", null, null, null, false);
+
+    private static TitanLedgerBindResult LedgerRefused(string code) =>
+        new(TitanBindOutcome.Refused, code, "REFUSED", null, false);
+
+    private static async Task<HttpResponseMessage> PostAsync(
         HttpMessageHandler? handler,
         string baseUrl,
         string accessToken,
         string relative,
+        IReadOnlyDictionary<string, string> body,
         CancellationToken cancellationToken)
     {
-        using var client = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
+        // Redirects are not followed: a 3xx is not 200 and fails closed, and the body is never re-sent elsewhere.
+        using var client = handler is null
+            ? new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false })
+            : new HttpClient(handler, disposeHandler: false);
         client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
-        using var request = new HttpRequestMessage(HttpMethod.Get, relative);
+        using var request = new HttpRequestMessage(HttpMethod.Post, relative)
+        {
+            Content = JsonContent.Create(body),
+        };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         return await client.SendAsync(request, cancellationToken);
+    }
+
+    /// <summary>Titan wraps a success in <c>{ "data": ... }</c>.</summary>
+    private static bool TryReadData(JsonElement root, out JsonElement data)
+    {
+        data = default;
+        return root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("data", out data)
+            && data.ValueKind == JsonValueKind.Object;
+    }
+
+    /// <summary>The answer must be for the CustomerRef that was asked about.</summary>
+    private static bool SameRef(JsonElement data, string scheme, string id, string tenantId) =>
+        string.Equals(ReadString(data, "scheme"), scheme, StringComparison.Ordinal)
+        && string.Equals(ReadString(data, "id"), id, StringComparison.Ordinal)
+        && string.Equals(ReadString(data, "tenantId"), tenantId, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Titan errors are <c>{ "error": { "code": ... } }</c>; anything else has no code.</summary>
+    private static string? ErrorCode(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.Object
+                    ? ReadString(error, "code")
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static bool HasRef(string scheme, string id, string tenantId) =>

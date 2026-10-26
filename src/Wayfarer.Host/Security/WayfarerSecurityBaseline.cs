@@ -51,6 +51,13 @@ public static class WayfarerSecurityBaseline
                 + $"(the {WayfarerAegisOptions.DefaultIntrospectionClientId} client).");
         }
 
+        // Aegis contract: Wayfarer introspects only as its own introspection client.
+        if (!string.Equals(aegis.IntrospectionClientId.Trim(), WayfarerAegisOptions.DefaultIntrospectionClientId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Aegis:IntrospectionClientId must be {WayfarerAegisOptions.DefaultIntrospectionClientId} outside Development.");
+        }
+
         ValidateListeners(configuration);
 
         foreach (var key in PeerUrlSettings)

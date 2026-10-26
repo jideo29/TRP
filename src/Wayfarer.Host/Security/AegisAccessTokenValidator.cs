@@ -28,14 +28,14 @@ public sealed record AegisTokenDecision(
 
 /// <summary>
 /// M52 / ASVS 3.5.3: validates an Aegis access token before any peer call. The signature must verify against the
-/// Aegis JWKS (ES256, which Aegis signs with on P-256, or RS256 if an RSA key is published; nothing else), the issuer and the configured audience must match, <c>exp</c> is required and checked
+/// Aegis JWKS (ES256 only, decision 83: Aegis signs ES256 on P-256; RS256 and every other algorithm are refused even if an RSA key is published), the issuer and the configured audience must match, <c>exp</c> is required and checked
 /// (30 s skew), and <c>typ</c> must be <c>at+jwt</c>. The claim shape is then checked by
 /// <see cref="AegisTokenRules.TryAccept"/> (<c>sub</c>, <c>tenantId</c>, ADR-003 <c>customerRef</c>).
 /// Nothing is read from an unvalidated payload.
 /// </summary>
 public sealed class AegisAccessTokenValidator
 {
-    public static readonly IReadOnlyList<string> AllowedAlgorithms = [SecurityAlgorithms.EcdsaSha256, SecurityAlgorithms.RsaSha256];
+    public static readonly IReadOnlyList<string> AllowedAlgorithms = [SecurityAlgorithms.EcdsaSha256];
 
     private readonly HttpClient _http;
     private readonly AegisSigningKeyCache _keys;

@@ -15,7 +15,7 @@ using Wayfarer.Security;
 namespace Wayfarer.Tests;
 
 /// <summary>
-/// Synthetic Aegis for host tests: an EC P-256 key (Aegis signs ES256) and an RSA key served as JWKS and an introspection endpoint that only answers the
+/// Synthetic Aegis for host tests: an EC P-256 key (Aegis signs ES256; tokens are ES256 by default) and an RSA key (to prove RS256 is refused) served as JWKS and an introspection endpoint that only answers the
 /// <c>wayfarer-introspection</c> client over HTTP Basic (no caller token as Bearer, no tenant header).
 /// </summary>
 public sealed class FakeAegis : HttpMessageHandler
@@ -64,7 +64,7 @@ public sealed class FakeAegis : HttpMessageHandler
         TimeSpan? lifetime = null,
         SecurityKey? signWith = null,
         string? audience = null,
-        bool es256 = false)
+        bool es256 = true)
     {
         var claims = new Dictionary<string, object>
         {
@@ -86,7 +86,7 @@ public sealed class FakeAegis : HttpMessageHandler
             Expires = expires,
             Claims = claims,
             TokenType = AegisTokenRules.AccessTokenType,
-            SigningCredentials = es256
+            SigningCredentials = es256 && signWith is not RsaSecurityKey
                 ? new SigningCredentials(signWith ?? _ecKey, SecurityAlgorithms.EcdsaSha256)
                 : new SigningCredentials(signWith ?? _key, SecurityAlgorithms.RsaSha256),
         });

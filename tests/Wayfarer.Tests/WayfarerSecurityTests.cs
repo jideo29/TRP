@@ -46,7 +46,7 @@ public sealed class WayfarerSecurityTests
     {
         var aegis = new FakeAegis();
         await using var factory = SecureHost.Create(aegis);
-        var otherKey = new RsaSecurityKey(RSA.Create(2048)) { KeyId = FakeAegis.KeyId };
+        var otherKey = new ECDsaSecurityKey(ECDsa.Create(ECCurve.NamedCurves.nistP256)) { KeyId = FakeAegis.EcKeyId };
         var valid = aegis.Mint();
         var parts = valid.Split('.');
         var unsigned = parts[0] + "." + parts[1] + ".";
@@ -102,10 +102,24 @@ public sealed class WayfarerSecurityTests
     }
 
     [Fact]
-    public async Task Only_es256_and_rs256_are_accepted()
+    public async Task Only_es256_is_accepted_and_rs256_with_a_published_rsa_key_is_refused()
     {
         var aegis = new FakeAegis();
         await using var factory = SecureHost.Create(aegis);
+
+        // Round 4, A-4 (decision 83): RS256 is refused even when signed by the RSA key that the JWKS publishes.
+        var rs256 = aegis.Mint(es256: false);
+        Assert.Equal("RS256", new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(rs256).Alg);
+        using (var rsClient = factory.Client(rs256))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, (await rsClient.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
+        }
+
+        using (var esClient = factory.Client(aegis.Mint()))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, (await esClient.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
+        }
+
         var symmetric = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("synthetic-hs256-key-that-is-long-enough-32b")) { KeyId = FakeAegis.KeyId };
         var hs256 = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
@@ -133,7 +147,7 @@ public sealed class WayfarerSecurityTests
         await using var factory = SecureHost.Create(aegis);
         for (var i = 0; i < 20; i++)
         {
-            var key = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "unknown-" + i };
+            var key = new ECDsaSecurityKey(ECDsa.Create(ECCurve.NamedCurves.nistP256)) { KeyId = "unknown-" + i };
             using var client = factory.Client(aegis.Mint(signWith: key));
             Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
         }
@@ -326,6 +340,11 @@ public sealed class WayfarerSecurityTests
                      new Dictionary<string, string?> { ["Aegis:JwksUrl"] = "http://aegis.synthetic.test/jwks" },
                      new Dictionary<string, string?> { ["Aegis:Issuer"] = "http://aegis.synthetic.test" },
                      new Dictionary<string, string?> { ["Aegis:IntrospectionClientSecret"] = "" },
+                     // Round 4, W-1: only the wayfarer-introspection client.
+                     new Dictionary<string, string?> { ["Aegis:IntrospectionClientId"] = "some-other-client" },
+                     // Round 4, W-2: an https listener plus an extra http one is still refused.
+                     new Dictionary<string, string?> { ["urls"] = "https://127.0.0.1:8443;http://127.0.0.1:8080" },
+                     new Dictionary<string, string?> { ["Kestrel:Endpoints:Https:Url"] = "https://127.0.0.1:8444", ["Kestrel:Endpoints:Http:Url"] = "http://127.0.0.1:8081" },
                      new Dictionary<string, string?> { ["Pulse:BaseUrl"] = "http://pulse.synthetic.test" },
                      new Dictionary<string, string?> { ["RateLimiting:Enabled"] = "false" },
                      new Dictionary<string, string?> { ["Titan:Ledger:BaseUrl"] = "https://titan.synthetic.test" },
@@ -334,6 +353,22 @@ public sealed class WayfarerSecurityTests
             using var factory = SecureHost.Create(new FakeAegis(), environment, overrides);
             Assert.ThrowsAny<Exception>(() => factory.CreateClient());
         }
+    }
+
+    [Theory]
+    [InlineData("Production", "urls", "https://127.0.0.1:8443;http://127.0.0.1:8080", "Listener URLs must be https")]
+    [InlineData("Testing", "urls", "https://127.0.0.1:8443;http://127.0.0.1:8080", "Listener URLs must be https")]
+    [InlineData("Production", "Kestrel:Endpoints:Http:Url", "http://127.0.0.1:8081", "Kestrel:Endpoints:Http:Url must be https")]
+    [InlineData("Production", "Aegis:IntrospectionClientId", "some-other-client", "Aegis:IntrospectionClientId must be wayfarer-introspection")]
+    [InlineData("Staging", "Aegis:IntrospectionClientId", "some-other-client", "Aegis:IntrospectionClientId must be wayfarer-introspection")]
+    public void Round_4_an_extra_http_listener_and_another_introspection_client_refuse_start(
+        string environment, string key, string value, string expected)
+    {
+        // W-2: the https listener in the base settings stays; the extra http one alone must refuse start.
+        // W-1: the introspection client must be wayfarer-introspection.
+        using var factory = SecureHost.Create(new FakeAegis(), environment, new Dictionary<string, string?> { [key] = value });
+        var ex = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+        Assert.Contains(expected, ex.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -465,7 +500,7 @@ public sealed class WayfarerSecurityTests
         public Task<TitanCustomerBindResult> ResolveCustomerAsync(string scheme, string id, string tenantId, CancellationToken cancellationToken) =>
             Task.FromResult(new TitanCustomerBindResult(TitanBindOutcome.Bound, "titan.customer.bound", "TITAN", scheme, id, tenantId, false));
 
-        public Task<TitanLedgerBindResult> ResolveLedgerAsync(string scheme, string id, string tenantId, CancellationToken cancellationToken)
+        public Task<TitanLedgerBindResult> ResolveLedgerAsync(string scheme, string id, string tenantId, string? currencyCode, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref LedgerCalls);
             return Task.FromResult(new TitanLedgerBindResult(TitanBindOutcome.Bound, "titan.ledger.bound", "TITAN", "ledger-synthetic-1", false));
@@ -477,7 +512,7 @@ public sealed class WayfarerSecurityTests
         public Task<TitanCustomerBindResult> ResolveCustomerAsync(string scheme, string id, string tenantId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("synthetic failure");
 
-        public Task<TitanLedgerBindResult> ResolveLedgerAsync(string scheme, string id, string tenantId, CancellationToken cancellationToken) =>
+        public Task<TitanLedgerBindResult> ResolveLedgerAsync(string scheme, string id, string tenantId, string? currencyCode, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("synthetic failure");
     }
 }

@@ -125,7 +125,7 @@ app.MapPost("/api/remittance/binding", async (
 
         var customer = await bind.ResolveCustomerAsync(scheme, id, tenant, cancellationToken);
         var ledger = caller.Holds(scheme, id, tenant)
-            ? await bind.ResolveLedgerAsync(scheme, id, tenant, cancellationToken)
+            ? await bind.ResolveLedgerAsync(scheme, id, tenant, body?.CurrencyCode, cancellationToken)
             : TitanCustomerLedgerBind.LedgerWithheld();
         return Results.Ok(new RemittanceBinding(customer, ledger));
     })
@@ -173,7 +173,7 @@ public sealed record RemittanceBinding(TitanCustomerBindResult Customer, TitanLe
 
 public sealed record RemittancePayoutBody(CustomerRefBody? CustomerRef, string? Rail, decimal? AmountPhp);
 
-public sealed record CustomerRefBody(string? Scheme, string? Id, string? TenantId);
+public sealed record CustomerRefBody(string? Scheme, string? Id, string? TenantId, string? CurrencyCode = null);
 
 public partial class Program;
 
