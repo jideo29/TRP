@@ -54,7 +54,6 @@ public sealed class FakeAegis : HttpMessageHandler
         ["Aegis:IntrospectionClientId"] = WayfarerAegisOptions.DefaultIntrospectionClientId,
         ["Aegis:IntrospectionClientSecret"] = IntrospectionSecret,
         ["urls"] = "https://127.0.0.1:8443",
-        ["OpenApi:ExposeUi"] = "false",
     };
 
     public string Mint(

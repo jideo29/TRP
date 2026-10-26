@@ -24,11 +24,11 @@ Regulated deployment modes (`TrudiIntegrated`, `PlatformIntegrated`, `ForeignInt
 
 ## Security baseline
 
-Every route except `/`, the static assets, `/api/host`, `/health` and the OpenAPI document requires a caller. Outside Development the host refuses to start when:
+Every route except `/`, the static assets, `/api/host` and `/health` requires a caller. The OpenAPI document (`/openapi/v1.json`) and Swagger UI are served in Development only; no setting serves them in another environment, and the checked-in `docs/api/wayfarer-openapi-v1.json` is the published contract. Outside Development the host refuses to start when:
 
 - `Deployment:Mode` is `Standalone` (X1, decision 117; only Development is exempt, `Testing` and `Staging` are not). The Standalone session routes (`/api/standalone/*`) are mapped only in Development, and a Standalone session expires after `Standalone:SessionMinutes` (default 60, at most 480);
-- `Aegis:Issuer`, `Aegis:JwksUrl` or `Aegis:IntrospectionUrl` is not https, `Aegis:Audience` is empty, or the `wayfarer-introspection` client secret is missing (X2, X5);
-- a listener, or a Pulse, Atlas, Sentinel or Titan URL, is http (X3). The image listens on https 8443 only; the certificate is mounted at deploy time;
+- `Aegis:Issuer`, `Aegis:JwksUrl` or `Aegis:IntrospectionUrl` is not https, `Aegis:Audience` is empty, `Aegis:IntrospectionClientId` is not exactly `wayfarer-introspection`, or its secret is missing (X2, X5, W-1);
+- a listener, or a Pulse, Atlas, Sentinel or Titan URL, is http (X3). The image listens on https 8443 only, and an http listener next to an https one is refused (W-2); the certificate is mounted at deploy time. The SDK and ASP.NET base images in `src/Wayfarer.Host/Dockerfile` are pinned by `sha256` digest (a test enforces it) and Dependabot proposes digest updates;
 - Titan is configured without `Titan:ClientId` and `Titan:ClientSecret` (L20);
 - `RateLimiting:Enabled` is `false` (X7).
 

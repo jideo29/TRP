@@ -72,7 +72,7 @@ public sealed class OpenApiTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task Swagger_ui_returns_404_in_production()
+    public async Task Document_and_swagger_ui_are_not_served_in_production()
     {
         var aegis = new FakeAegis();
         using var factory = SecureHost.Create(aegis, Environments.Production);
@@ -82,20 +82,29 @@ public sealed class OpenApiTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/swagger")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/swagger/index.html")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/scalar")).StatusCode);
-
-        var document = await client.GetAsync("/openapi/v1.json");
-        Assert.Equal(HttpStatusCode.OK, document.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/openapi/v1.json")).StatusCode);
     }
 
     [Fact]
-    public async Task Swagger_ui_can_be_enabled_outside_development_by_config()
+    public async Task Anonymous_caller_gets_no_document_outside_development()
     {
-        using var factory = SecureHost.Create(
-            new FakeAegis(), Environments.Production, new Dictionary<string, string?> { ["OpenApi:ExposeUi"] = "true" });
+        using var factory = SecureHost.Create(new FakeAegis(), Environments.Production);
         var client = factory.Client();
 
-        var response = await client.GetAsync("/swagger/index.html");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/openapi/v1.json")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/swagger/index.html")).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_retired_expose_ui_setting_does_not_serve_the_document_outside_development()
+    {
+        var aegis = new FakeAegis();
+        using var factory = SecureHost.Create(
+            aegis, Environments.Production, new Dictionary<string, string?> { ["OpenApi:ExposeUi"] = "true" });
+        var client = factory.Client(aegis.Mint());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/swagger/index.html")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/openapi/v1.json")).StatusCode);
     }
 
     private HttpClient DevelopmentClient() => _factory.CreateClient();

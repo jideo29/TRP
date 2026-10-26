@@ -2,10 +2,13 @@ using Microsoft.OpenApi;
 
 namespace Wayfarer;
 
+/// <summary>
+/// The OpenAPI document and Swagger UI are anonymous, so they are served in Development only. No setting turns them
+/// on in another environment; operators use the checked-in docs/api/wayfarer-openapi-v1.json.
+/// </summary>
 internal static class OpenApiUi
 {
-    public static bool Expose(IHostEnvironment environment, IConfiguration configuration) =>
-        environment.IsDevelopment() || configuration.GetValue("OpenApi:ExposeUi", false);
+    public static bool Expose(IHostEnvironment environment) => environment.IsDevelopment();
 }
 
 internal static class WayfarerOpenApiHostExtensions
@@ -27,19 +30,20 @@ internal static class WayfarerOpenApiHostExtensions
 
     public static WebApplication UseWayfarerOpenApi(this WebApplication app)
     {
-        app.MapOpenApi().AllowAnonymous();
-
-        if (OpenApiUi.Expose(app.Environment, app.Configuration))
+        if (!OpenApiUi.Expose(app.Environment))
         {
-            app.UseSwaggerUI(options =>
-            {
-                options.RoutePrefix = "swagger";
-                options.DocumentTitle = "Wayfarer";
-                options.SwaggerEndpoint("/openapi/v1.json", "Wayfarer v1");
-                options.InjectStylesheet("/assets/swagger.css");
-                options.ConfigObject.ValidatorUrl = null;
-            });
+            return app;
         }
+
+        app.MapOpenApi().AllowAnonymous();
+        app.UseSwaggerUI(options =>
+        {
+            options.RoutePrefix = "swagger";
+            options.DocumentTitle = "Wayfarer";
+            options.SwaggerEndpoint("/openapi/v1.json", "Wayfarer v1");
+            options.InjectStylesheet("/assets/swagger.css");
+            options.ConfigObject.ValidatorUrl = null;
+        });
 
         return app;
     }
