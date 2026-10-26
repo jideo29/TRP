@@ -67,6 +67,71 @@ public sealed class WayfarerSecurityTests
     }
 
     [Fact]
+    public async Task Only_rs256_is_accepted()
+    {
+        var aegis = new FakeAegis();
+        await using var factory = SecureHost.Create(aegis);
+        var symmetric = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("synthetic-hs256-key-that-is-long-enough-32b")) { KeyId = FakeAegis.KeyId };
+        var hs256 = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = FakeAegis.Issuer,
+            Audience = FakeAegis.Audience,
+            Expires = DateTime.UtcNow.AddMinutes(5),
+            TokenType = AegisTokenRules.AccessTokenType,
+            Claims = new Dictionary<string, object>
+            {
+                ["sub"] = "actor-1",
+                ["tenantId"] = "tenant-1",
+                [AegisTokenRules.CustomerRefClaim] = """{"scheme":"titan-cif","id":"cif-1","tenantId":"tenant-1"}""",
+            },
+            SigningCredentials = new SigningCredentials(symmetric, SecurityAlgorithms.HmacSha256),
+        });
+        using var client = factory.Client(hs256);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
+    }
+
+    [Fact]
+    public async Task Unknown_kid_tokens_do_not_refetch_the_jwks_on_every_request()
+    {
+        var aegis = new FakeAegis();
+        await using var factory = SecureHost.Create(aegis);
+        for (var i = 0; i < 20; i++)
+        {
+            var key = new RsaSecurityKey(RSA.Create(2048)) { KeyId = "unknown-" + i };
+            using var client = factory.Client(aegis.Mint(signWith: key));
+            Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
+        }
+
+        Assert.InRange(aegis.JwksFetches, 1, 2);
+    }
+
+    [Fact]
+    public async Task An_unreachable_introspection_endpoint_fails_closed()
+    {
+        var aegis = new FakeAegis { IntrospectionDown = true };
+        await using var factory = SecureHost.Create(aegis);
+        using var client = factory.Client(aegis.Mint());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_wrong_introspection_secret_is_refused_by_aegis_and_the_caller_is_refused()
+    {
+        var aegis = new FakeAegis();
+        await using var factory = SecureHost.Create(aegis, overrides: new Dictionary<string, string?>
+        {
+            ["Aegis:IntrospectionClientSecret"] = "a-different-synthetic-secret",
+        });
+        using var client = factory.Client(aegis.Mint());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/remittance/payout", PayoutBody())).StatusCode);
+        var sent = Assert.Single(aegis.IntrospectionRequests);
+        Assert.Equal("Basic", sent.Headers.Authorization!.Scheme);
+    }
+
+    [Fact]
     public async Task Payout_refuses_a_body_tenant_that_differs_from_the_token()
     {
         var aegis = new FakeAegis();

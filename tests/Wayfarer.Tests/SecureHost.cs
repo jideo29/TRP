@@ -35,6 +35,9 @@ public sealed class FakeAegis : HttpMessageHandler
     }
 
     public ConcurrentBag<string> Revoked { get; } = [];
+    public bool IntrospectionDown { get; set; }
+    private int _jwksFetches;
+    public int JwksFetches => Volatile.Read(ref _jwksFetches);
     public ConcurrentQueue<HttpRequestMessage> IntrospectionRequests { get; } = new();
     public ConcurrentQueue<string> IntrospectionBodies { get; } = new();
 
@@ -89,6 +92,7 @@ public sealed class FakeAegis : HttpMessageHandler
         var url = request.RequestUri!.GetLeftPart(UriPartial.Path);
         if (url == JwksUrl)
         {
+            Interlocked.Increment(ref _jwksFetches);
             var jwk = JsonWebKeyConverter.ConvertFromRSASecurityKey(_key);
             var json = JsonSerializer.Serialize(new
             {
@@ -102,6 +106,8 @@ public sealed class FakeAegis : HttpMessageHandler
             IntrospectionRequests.Enqueue(request);
             var form = await request.Content!.ReadAsStringAsync(cancellationToken);
             IntrospectionBodies.Enqueue(form);
+            if (IntrospectionDown)
+                return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
             var expected = Convert.ToBase64String(Encoding.UTF8.GetBytes(
                 WayfarerAegisOptions.DefaultIntrospectionClientId + ":" + IntrospectionSecret));
             if (request.Headers.Authorization is not { Scheme: "Basic" } auth || auth.Parameter != expected)
