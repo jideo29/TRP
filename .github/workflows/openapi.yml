@@ -12,7 +12,7 @@ jobs:
     runs-on: [self-hosted, linux, trudi-sandbox]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Use runner temp for DOTNET_INSTALL_DIR
         run: echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/dotnet" >> "$GITHUB_ENV"

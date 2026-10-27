@@ -32,7 +32,7 @@ jobs:
     runs-on: [self-hosted, linux, trudi-sandbox]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # A non-root runner cannot write /usr/share/dotnet; install under runner temp.
       - name: DOTNET_INSTALL_DIR under runner temp
@@ -63,7 +63,7 @@ jobs:
     runs-on: [self-hosted, linux, trudi-sandbox]
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -114,7 +114,7 @@ jobs:
     runs-on: [self-hosted, linux, trudi-sandbox]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Trivy
         env:
@@ -146,7 +146,7 @@ jobs:
     runs-on: [self-hosted, linux, trudi-sandbox]
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -225,7 +225,7 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -260,7 +260,7 @@ jobs:
     runs-on: [self-hosted, linux, trudi-sandbox]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # A non-root runner cannot write /usr/share/dotnet; install under runner temp.
       - name: DOTNET_INSTALL_DIR under runner temp
@@ -294,7 +294,7 @@ jobs:
       # Keyless Sigstore signing on main only (OIDC identity of this workflow); unused on pull requests.
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # The sandbox runner reaches the shared dind sidecar through DOCKER_HOST; never the host socket.
       - name: Require dind via DOCKER_HOST
