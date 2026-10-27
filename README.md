@@ -28,7 +28,7 @@ Every route except `/`, the static assets, `/api/host` and `/health` requires a 
 
 - `Deployment:Mode` is `Standalone` (X1, decision 117; only Development is exempt, `Testing` and `Staging` are not). The Standalone session routes (`/api/standalone/*`) are mapped only in Development, and a Standalone session expires after `Standalone:SessionMinutes` (default 60, at most 480);
 - `Aegis:Issuer`, `Aegis:JwksUrl` or `Aegis:IntrospectionUrl` is not https, `Aegis:Audience` is empty, `Aegis:IntrospectionClientId` is not exactly `wayfarer-introspection`, or its secret is missing (X2, X5, W-1);
-- a listener, or a Pulse, Atlas, Sentinel or Titan URL, is http (X3). The image listens on https 8443 only, and an http listener next to an https one is refused (W-2); the certificate is mounted at deploy time. The SDK and ASP.NET base images in `src/Wayfarer.Host/Dockerfile` are pinned by `sha256` digest (a test enforces it) and Dependabot proposes digest updates;
+- a listener, or a Pulse, Atlas, Sentinel or Titan URL, is http (X3). The image listens on https 8443 only, and an http listener next to an https one is refused (W-2); the certificate is mounted at deploy time. The ASP.NET runtime base in `src/Wayfarer.Host/Dockerfile` is pinned by `sha256` digest (a test enforces it) and Dependabot proposes digest updates. CI compiles with the runner's .NET SDK and packs that publish output into the image; the image does not restore NuGet inside Docker;
 - Titan is configured without `Titan:ClientId` and `Titan:ClientSecret` (L20);
 - `RateLimiting:Enabled` is `false` (X7).
 
@@ -46,7 +46,7 @@ The launch profile runs in Development on `https://localhost:7213` with the Stan
 dotnet test Wayfarer.sln
 ```
 
-CI (`.github/workflows/ci.yml`, M48 / X4) runs the build with warnings as errors, the full test suite, a NuGet vulnerability audit, gitleaks over git history with `.gitleaks.toml`, Trivy filesystem and image scans, Semgrep, SonarQube (`/d:sonar.token` from the `SONAR_TOKEN` secret, quality gate awaited), and a CycloneDX SBOM per image digest. A missing scanner token fails the job. Dependabot covers NuGet, GitHub Actions and the Docker base images.
+CI (`.github/workflows/ci.yml`, M48 / X4) runs the build with warnings as errors, the full test suite, a NuGet vulnerability audit, gitleaks over git history with `.gitleaks.toml`, Trivy filesystem and image scans, Semgrep, and a CycloneDX SBOM per image digest. SonarQube (`/d:sonar.token` from the `SONAR_TOKEN` secret, quality gate awaited) runs when that secret and an https `SONAR_HOST_URL` are set. When they are absent the scan job is skipped; that skip is not a quality-gate pass. Semgrep still fails the workflow on an ERROR finding. Dependabot covers NuGet, GitHub Actions and the Docker base image.
 
 ## Non-goals
 

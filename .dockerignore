@@ -6,3 +6,6 @@
 **/TestResults
 _bmad-output
 .agents
+**/*.tar.gz
+sbom
+image

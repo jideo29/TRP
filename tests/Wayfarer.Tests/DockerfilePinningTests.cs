@@ -198,6 +198,33 @@ public sealed class DockerfilePinningTests
         Assert.Throws<InvalidOperationException>(() => UnpinnedReferences(dockerfile));
     }
 
+    [Fact]
+    public void Service_image_packs_a_runner_publish_and_does_not_restore_inside_docker()
+    {
+        var root = FindRepoRoot();
+        var dockerfile = File.ReadAllText(Path.Combine(root, ServiceDockerfile));
+        var instructions = dockerfile
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith('#'));
+        var body = string.Join('\n', instructions);
+
+        Assert.Contains("mcr.microsoft.com/dotnet/aspnet:10.0-noble@sha256:", body, StringComparison.Ordinal);
+        Assert.Contains("test -f Wayfarer.Host.dll", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("dotnet publish", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dotnet restore", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("mcr.microsoft.com/dotnet/sdk:", body, StringComparison.Ordinal);
+        Assert.Empty(UnpinnedReferences(dockerfile));
+
+        var ci = File.ReadAllText(Path.Combine(root, ".github/workflows/ci.yml"));
+        Assert.Contains("dotnet publish src/Wayfarer.Host/Wayfarer.Host.csproj", ci, StringComparison.Ordinal);
+        Assert.Contains("${RUNNER_TEMP}/wayfarer-publish", ci, StringComparison.Ordinal);
+        Assert.DoesNotContain("docker build -f src/Wayfarer.Host/Dockerfile -t \"wayfarer-host:${GITHUB_SHA}\" .", ci, StringComparison.Ordinal);
+        Assert.Contains("needs.sonar-configuration.outputs.run == 'true'", ci, StringComparison.Ordinal);
+        Assert.Contains("This result is not a quality-gate pass.", ci, StringComparison.Ordinal);
+    }
+
     internal static bool IsDockerfileName(string fileName) => DockerfileName.IsMatch(fileName);
 
     internal static List<string> FindDockerfiles(string root)

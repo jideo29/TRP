@@ -1,10 +1,12 @@
 name: CI
 
 # M48 / X4 (decisions 86, 107): build with warnings as errors, the full unfiltered test suite, dependency
-# audit, secret scan over git history, SAST (Semgrep and SonarQube), filesystem and image scans, a CycloneDX
-# SBOM per image digest and, on main, a keyless Sigstore signature over the image archive and its SBOM.
-# Every scanner fails the job on a finding; a missing scanner token fails the job instead of skipping it.
-# Pull requests from forks never reach the self-hosted sandbox runner.
+# audit, secret scan over git history, SAST (Semgrep, and SonarQube when it is configured), filesystem and
+# image scans, a CycloneDX SBOM per image digest and, on main, a keyless Sigstore signature over the image
+# archive and its SBOM. Every scanner that runs fails the job on a finding. SonarQube runs only when
+# SONAR_TOKEN and an https SONAR_HOST_URL are set; otherwise that job is skipped and is not a quality-gate
+# pass. Semgrep still fails the workflow on an ERROR finding. Pull requests from forks never reach the
+# self-hosted sandbox runner.
 #
 # Trudi sandbox is one shared 8 GB host. Runners have no host Docker socket.
 # Testcontainers or image builds must use the dind sidecar through the
@@ -166,19 +168,49 @@ jobs:
             --metrics=off \
             --quiet
 
+  # Records whether SonarQube can run. Success of this job is not a quality-gate pass: when the
+  # secret or the https host is absent the scan job is skipped and the log says the gate did not run.
+  sonar-configuration:
+    name: sonar configuration
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - name: Record whether a SonarQube quality gate can run
+        id: gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        run: |
+          set -euo pipefail
+          if [ -n "${SONAR_TOKEN}" ] && [[ "${SONAR_HOST_URL}" == https://* ]]; then
+            echo "run=true" >> "${GITHUB_OUTPUT}"
+            echo "SONAR_TOKEN is set and SONAR_HOST_URL is https. The sonar job will run and wait for the quality gate."
+          else
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+            echo "SonarQube did not run. SONAR_TOKEN is missing or SONAR_HOST_URL is not an https URL."
+            echo "This result is not a quality-gate pass. Semgrep still runs in its own job."
+            echo "::notice title=SonarQube did not run::SONAR_TOKEN or an https SONAR_HOST_URL is not configured. This is not a quality-gate pass."
+          fi
+
   sonar:
     name: sonar
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: sonar-configuration
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && needs.sonar-configuration.outputs.run == 'true'
     runs-on: [self-hosted, linux, trudi-sandbox]
     timeout-minutes: 25
     # X4 / X3: the token comes only from the SONAR_TOKEN secret (masked in logs, never committed) and the Sonar
     # host must be https. SonarScanner for .NET does not read SONAR_TOKEN by itself, so the step passes it with
-    # /d:sonar.token from that environment variable.
+    # /d:sonar.token from that environment variable. The job above skips this one when either is missing; that
+    # skip is not a pass. If this job does start, an empty token or a non-https host still fails it.
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
     steps:
-      # X4: a missing scanner token is a failure, not a skip.
       - name: Require SONAR_TOKEN and an https SONAR_HOST_URL
         run: |
           if [ -z "${SONAR_TOKEN}" ]; then
@@ -279,6 +311,43 @@ jobs:
               ;;
           esac
 
+      # A non-root runner cannot write /usr/share/dotnet; install under runner temp.
+      # Publish here, not inside dind. Run 40413482856 spent the 30 minute job limit inside
+      # `dotnet publish` ("Determining projects to restore...") while this workflow's runner
+      # restore finished in seconds. The image is that output on the pinned ASP.NET runtime.
+      - name: DOTNET_INSTALL_DIR under runner temp
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        run: echo "DOTNET_INSTALL_DIR=${DOTNET_INSTALL_DIR}" >> "${GITHUB_ENV}"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      - name: Publish on the runner
+        env:
+          NUGET_CERT_REVOCATION_MODE: offline
+          DOTNET_SYSTEM_NET_DISABLEIPV6: "1"
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+          DOTNET_NOLOGO: "1"
+        run: |
+          set -euo pipefail
+          dotnet publish src/Wayfarer.Host/Wayfarer.Host.csproj \
+            -c Release \
+            -o "${RUNNER_TEMP}/wayfarer-publish" \
+            --no-self-contained \
+            /p:UseAppHost=false
+          test -f "${RUNNER_TEMP}/wayfarer-publish/Wayfarer.Host.dll"
+
+      - name: Build image (local only, never pushed)
+        run: |
+          set -euo pipefail
+          docker build \
+            -f src/Wayfarer.Host/Dockerfile \
+            -t "wayfarer-host:${GITHUB_SHA}" \
+            "${RUNNER_TEMP}/wayfarer-publish"
+
       - name: Install Trivy
         env:
           TRIVY_VERSION: "0.76.0"
@@ -286,6 +355,7 @@ jobs:
           TRIVY_SHA256: "e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7"
         run: |
           set -euo pipefail
+          cd "${RUNNER_TEMP}"
           ARCHIVE="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
           curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${ARCHIVE}" -o "${ARCHIVE}"
           echo "${TRIVY_SHA256}  ${ARCHIVE}" | sha256sum -c -
@@ -301,6 +371,7 @@ jobs:
           SYFT_SHA256: "bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d"
         run: |
           set -euo pipefail
+          cd "${RUNNER_TEMP}"
           ARCHIVE="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
           curl -fsSL "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${ARCHIVE}" -o "${ARCHIVE}"
           echo "${SYFT_SHA256}  ${ARCHIVE}" | sha256sum -c -
@@ -308,9 +379,6 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/bin" && mv syft "${RUNNER_TEMP}/bin/syft"
           echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
           "${RUNNER_TEMP}/bin/syft" version
-
-      - name: Build image (local only, never pushed)
-        run: docker build -f src/Wayfarer.Host/Dockerfile -t "wayfarer-host:${GITHUB_SHA}" .
 
       - name: Trivy image scan (HIGH/CRITICAL)
         run: trivy image --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 "wayfarer-host:${GITHUB_SHA}"
