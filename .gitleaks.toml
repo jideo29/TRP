@@ -1,0 +1,7 @@
+title = "Wayfarer gitleaks config"
+
+# M48 / X4: the default rule set with no allowlist. The local gitleaks 8.30 scan of the full history
+# (21 commits) on 2026-10-27 found no leaks, so nothing is excluded. Add an AND-scoped allowlist entry
+# (path plus exact match) only for a confirmed false positive.
+[extend]
+useDefault = true

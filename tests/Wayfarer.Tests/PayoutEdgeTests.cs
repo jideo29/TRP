@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -104,7 +105,9 @@ public sealed class PayoutEdgeTests
         Assert.DoesNotContain("score", calls.Bodies[2], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("bank_booked", calls.Bodies[2], StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("money_pass", calls.Bodies[2], StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("tenant-1", calls.Tenants[2]);
+        // M52: no identity headers; Pulse reads identity from the forwarded token.
+        Assert.All(calls.IdentityHeaders, Assert.Null);
+        Assert.All(calls.Authorizations, value => Assert.Equal("Bearer token-1", value));
     }
 
     [Fact]
@@ -154,8 +157,12 @@ public sealed class PayoutEdgeTests
     [Fact]
     public async Task Host_standalone_labels_the_stand_in_and_still_refuses_a_missing_customerRef()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.UseSetting("Standalone:SigningKey", "wayfarer-standalone-test-key"));
         using var client = factory.CreateClient();
+        using var session = await client.PostAsJsonAsync("/api/standalone/session", new { operatorId = "wayfarer-operator", tenantId = "tenant-1" });
+        var token = (await session.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("token").GetString();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
         using var empty = new StringContent("{}", Encoding.UTF8, "application/json");
         var missing = await client.PostAsync("/api/remittance/payout", empty);
@@ -209,14 +216,16 @@ public sealed class PayoutEdgeTests
         public List<string> Paths { get; } = [];
         public List<string> Bodies { get; } = [];
         public List<string?> Authorizations { get; } = [];
-        public List<string?> Tenants { get; } = [];
+        public List<string?> IdentityHeaders { get; } = [];
         public int Count => Paths.Count;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Paths.Add(request.RequestUri?.PathAndQuery ?? "");
             Authorizations.Add(request.Headers.Authorization?.ToString());
-            Tenants.Add(request.Headers.TryGetValues("X-Tenant-Id", out var tenants) ? tenants.Single() : null);
+            var identity = new[] { "X-Tenant-Id", "X-Subject-Id", "X-Authorization-Decision-Id" }
+                .Where(name => request.Headers.Contains(name)).ToList();
+            IdentityHeaders.Add(identity.Count == 0 ? null : string.Join(",", identity));
             Bodies.Add(request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken));
             return respond(request);
         }

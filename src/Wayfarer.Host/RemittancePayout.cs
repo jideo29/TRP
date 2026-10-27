@@ -8,6 +8,10 @@ namespace Wayfarer;
 
 /// <summary>
 /// Payout handoff toward Pulse. This is not a Titan posting and not a payroll path.
+/// M52: the host calls this only for an authenticated caller. The tenant is the validated token's tenant, never
+/// the request body's, and the only credential forwarded to Atlas, Sentinel and Pulse is the caller's validated
+/// Aegis access token. No identity headers (tenant, subject, authorization decision) are sent: Pulse reads
+/// identity from the token (H14), and Wayfarer no longer decodes unverified token payloads.
 /// Integrated mode fails closed while Pulse, Atlas, or Sentinel is unset.
 /// Standalone with all three unset returns a stand-in labeled SIMULATED.
 /// No result claims settlement, bank_booked, or money_pass.
@@ -402,10 +406,7 @@ public static class PulsePayoutPort
                 correlationId,
                 payload,
                 cancellationToken,
-                correlationId ?? Guid.NewGuid().ToString("D"),
-                tenantId,
-                ReadJwtString(bearer, "sub"),
-                ReadAuthorizationDecision(bearer));
+                correlationId ?? Guid.NewGuid().ToString("D"));
             if (response.StatusCode is not (HttpStatusCode.OK or HttpStatusCode.Accepted))
                 return new PeerCallResult(PeerOutcome.Refused, false, "Pulse did not accept the handoff.");
 
@@ -443,38 +444,6 @@ public static class PulsePayoutPort
 
     private static bool Flag(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
-
-    private static string? ReadAuthorizationDecision(string bearer) =>
-        ReadJwtString(bearer, "authorization_decision_id")
-        ?? ReadJwtString(bearer, "authz_decision_id")
-        ?? ReadJwtString(bearer, "authorizationDecisionId");
-
-    private static string? ReadJwtString(string? bearer, string claim)
-    {
-        if (string.IsNullOrWhiteSpace(bearer))
-            return null;
-        var parts = bearer.Trim().Split('.');
-        if (parts.Length < 2)
-            return null;
-        try
-        {
-            var payload = parts[1].Replace('-', '+').Replace('_', '/');
-            payload = (payload.Length % 4) switch
-            {
-                2 => payload + "==",
-                3 => payload + "=",
-                _ => payload
-            };
-            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(payload)));
-            return document.RootElement.TryGetProperty(claim, out var value) && value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
-        }
-        catch (Exception ex) when (ex is FormatException or JsonException)
-        {
-            return null;
-        }
-    }
 }
 
 internal sealed record PeerHttpResponse(HttpStatusCode StatusCode, string Body);
@@ -490,10 +459,7 @@ internal static class PeerHttp
         string? correlationId,
         string? json,
         CancellationToken cancellationToken,
-        string? idempotencyKey = null,
-        string? tenantId = null,
-        string? subjectId = null,
-        string? authorizationDecisionId = null)
+        string? idempotencyKey = null)
     {
         using var client = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
         client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
@@ -504,12 +470,6 @@ internal static class PeerHttp
             request.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId);
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
             request.Headers.TryAddWithoutValidation("Idempotency-Key", idempotencyKey);
-        if (!string.IsNullOrWhiteSpace(tenantId))
-            request.Headers.TryAddWithoutValidation("X-Tenant-Id", tenantId);
-        if (!string.IsNullOrWhiteSpace(subjectId))
-            request.Headers.TryAddWithoutValidation("X-Subject-Id", subjectId);
-        if (!string.IsNullOrWhiteSpace(authorizationDecisionId))
-            request.Headers.TryAddWithoutValidation("X-Authorization-Decision-Id", authorizationDecisionId);
         if (json is not null)
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
         using var response = await client.SendAsync(request, cancellationToken);

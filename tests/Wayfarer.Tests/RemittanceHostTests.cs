@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -55,7 +56,17 @@ public sealed class RemittanceHostTests : IClassFixture<WebApplicationFactory<Pr
     [Fact]
     public async Task Payout_fails_closed_and_does_not_execute()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.WithWebHostBuilder(builder =>
+            builder.UseSetting("Standalone:SigningKey", "wayfarer-standalone-test-key")).CreateClient();
+        using (var anonymous = new StringContent("{}", Encoding.UTF8, "application/json"))
+        {
+            var refused = await client.PostAsync("/api/remittance/payout", anonymous);
+            Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+        }
+
+        using var session = await client.PostAsJsonAsync("/api/standalone/session", new { operatorId = "wayfarer-operator", tenantId = "tenant-1" });
+        var token = (await session.Content.ReadFromJsonAsync<JsonElement>(Json)).GetProperty("token").GetString();
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
 
         var response = await client.PostAsync("/api/remittance/payout", content);

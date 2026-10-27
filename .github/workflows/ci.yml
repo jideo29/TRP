@@ -1,0 +1,426 @@
+name: CI
+
+# M48 / X4 (decisions 86, 107): build with warnings as errors, the full unfiltered test suite, dependency
+# audit, secret scan over git history, SAST (Semgrep, and SonarQube when it is configured), filesystem and
+# image scans, a CycloneDX SBOM per image digest and, on main, a keyless Sigstore signature over the image
+# archive and its SBOM. Every scanner that runs fails the job on a finding. SonarQube runs only when
+# SONAR_TOKEN and an https SONAR_HOST_URL are set; otherwise that job is skipped and is not a quality-gate
+# pass. Semgrep still fails the workflow on an ERROR finding. Pull requests from forks never reach the
+# self-hosted sandbox runner.
+#
+# Trudi sandbox is one shared 8 GB host. Runners have no host Docker socket.
+# Testcontainers or image builds must use the dind sidecar through the
+# DOCKER_HOST already set on the runner. Do not mount /var/run/docker.sock.
+# A trudi-sandbox runner must be registered for this repository before these jobs run.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: build and test
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      # A non-root runner cannot write /usr/share/dotnet; install under runner temp.
+      - name: DOTNET_INSTALL_DIR under runner temp
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        run: echo "DOTNET_INSTALL_DIR=${DOTNET_INSTALL_DIR}" >> "${GITHUB_ENV}"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Wayfarer.sln
+
+      - name: Build (Release, warnings are errors)
+        run: dotnet build Wayfarer.sln -c Release --no-restore -warnaserror
+
+      # The suite uses an in-process TestServer and a synthetic Aegis. It does not start containers.
+      - name: Test (Release, full suite)
+        run: dotnet test Wayfarer.sln -c Release --no-build
+
+
+
+  gitleaks:
+    name: gitleaks
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          # From https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          ARCHIVE="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${ARCHIVE}" \
+            -o "${ARCHIVE}"
+          echo "${GITLEAKS_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar -xzf "${ARCHIVE}" gitleaks
+          mkdir -p "${RUNNER_TEMP}/bin" && mv gitleaks "${RUNNER_TEMP}/bin/gitleaks"
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/bin/gitleaks" version
+
+      # X4: scan git history, not only the working tree, so a secret added in one commit and removed in a
+      # later one is still reported. Pull requests: every commit in the PR range. Push: the full history.
+      - name: Run gitleaks (pull request commit range)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gitleaks git . \
+            --config .gitleaks.toml \
+            --redact \
+            --report-path gitleaks-report.json \
+            --exit-code 1 \
+            --log-opts="${BASE_SHA}..${HEAD_SHA}"
+
+      - name: Run gitleaks (full history)
+        if: github.event_name != 'pull_request'
+        run: |
+          gitleaks git . \
+            --config .gitleaks.toml \
+            --redact \
+            --report-path gitleaks-report.json \
+            --exit-code 1
+
+  trivy:
+    name: trivy
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: "0.76.0"
+          # From https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_checksums.txt
+          TRIVY_SHA256: "e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7"
+        run: |
+          set -euo pipefail
+          ARCHIVE="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${ARCHIVE}" -o "${ARCHIVE}"
+          echo "${TRIVY_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar -xzf "${ARCHIVE}" trivy
+          mkdir -p "${RUNNER_TEMP}/bin" && mv trivy "${RUNNER_TEMP}/bin/trivy"
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/bin/trivy" version
+
+      - name: Trivy filesystem scan (HIGH/CRITICAL)
+        run: |
+          set -euo pipefail
+          trivy fs . \
+            --scanners vuln,secret,misconfig \
+            --severity HIGH,CRITICAL \
+            --exit-code 1 \
+            --format table
+
+  semgrep:
+    name: semgrep
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "semgrep==1.181.0"
+
+      - name: Semgrep SAST
+        run: |
+          set -euo pipefail
+          semgrep scan \
+            --config p/default \
+            --severity=ERROR \
+            --error \
+            --metrics=off \
+            --quiet
+
+  # Records whether SonarQube can run. Success of this job is not a quality-gate pass: when the
+  # secret or the https host is absent the scan job is skipped and the log says the gate did not run.
+  sonar-configuration:
+    name: sonar configuration
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - name: Record whether a SonarQube quality gate can run
+        id: gate
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        run: |
+          set -euo pipefail
+          if [ -n "${SONAR_TOKEN}" ] && [[ "${SONAR_HOST_URL}" == https://* ]]; then
+            echo "run=true" >> "${GITHUB_OUTPUT}"
+            echo "SONAR_TOKEN is set and SONAR_HOST_URL is https. The sonar job will run and wait for the quality gate."
+          else
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+            echo "SonarQube did not run. SONAR_TOKEN is missing or SONAR_HOST_URL is not an https URL."
+            echo "This result is not a quality-gate pass. Semgrep still runs in its own job."
+            echo "::notice title=SonarQube did not run::SONAR_TOKEN or an https SONAR_HOST_URL is not configured. This is not a quality-gate pass."
+          fi
+
+  sonar:
+    name: sonar
+    needs: sonar-configuration
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && needs.sonar-configuration.outputs.run == 'true'
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 25
+    # X4 / X3: the token comes only from the SONAR_TOKEN secret (masked in logs, never committed) and the Sonar
+    # host must be https. SonarScanner for .NET does not read SONAR_TOKEN by itself, so the step passes it with
+    # /d:sonar.token from that environment variable. The job above skips this one when either is missing; that
+    # skip is not a pass. If this job does start, an empty token or a non-https host still fails it.
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+    steps:
+      - name: Require SONAR_TOKEN and an https SONAR_HOST_URL
+        run: |
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "SONAR_TOKEN is not configured. The SAST quality gate cannot run, so this job fails."
+            exit 1
+          fi
+          case "${SONAR_HOST_URL}" in
+            https://*) ;;
+            *)
+              echo "SONAR_HOST_URL (repository variable) must be an https:// URL. The token is never sent over plaintext."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # A non-root runner cannot write /usr/share/dotnet; install under runner temp.
+      - name: DOTNET_INSTALL_DIR under runner temp
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        run: echo "DOTNET_INSTALL_DIR=${DOTNET_INSTALL_DIR}" >> "${GITHUB_ENV}"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      # SonarScanner for .NET: the token comes only from the SONAR_TOKEN secret in the environment (masked in logs,
+      # never committed) and is passed with /d:sonar.token to begin and end. The quality gate is awaited
+      # (sonar.qualitygate.wait=true), so a failed gate fails the job; a missing token already failed above.
+      - name: SonarQube scan
+        run: |
+          set -euo pipefail
+          : "${SONAR_TOKEN:?SONAR_TOKEN is not configured}"
+          dotnet tool install --global dotnet-sonarscanner --version 12.0.0
+          export PATH="$HOME/.dotnet/tools:$PATH"
+          dotnet sonarscanner begin /k:"trudi-trp" /d:sonar.host.url="${SONAR_HOST_URL}" /d:sonar.token="${SONAR_TOKEN}" /d:sonar.qualitygate.wait=true
+          dotnet restore Wayfarer.sln
+          dotnet build Wayfarer.sln -c Release --no-restore
+          dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
+
+  dependency-audit:
+    name: dependency audit
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      # A non-root runner cannot write /usr/share/dotnet; install under runner temp.
+      - name: DOTNET_INSTALL_DIR under runner temp
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        run: echo "DOTNET_INSTALL_DIR=${DOTNET_INSTALL_DIR}" >> "${GITHUB_ENV}"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      - name: NuGet vulnerable packages (fail on High or Critical, transitive included)
+        run: |
+          set -euo pipefail
+          dotnet restore Wayfarer.sln
+          dotnet list Wayfarer.sln package --vulnerable --include-transitive | tee nuget-audit.txt
+          if grep -Eq '\b(High|Critical)\b' nuget-audit.txt; then
+            echo "High or Critical NuGet advisories found."
+            exit 1
+          fi
+
+  image:
+    name: image scan, SBOM and signature
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: [build-and-test]
+    runs-on: [self-hosted, linux, trudi-sandbox]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Keyless Sigstore signing on main only (OIDC identity of this workflow); unused on pull requests.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      # The sandbox runner reaches the shared dind sidecar through DOCKER_HOST; never the host socket.
+      - name: Require dind via DOCKER_HOST
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKER_HOST:-}" ]; then
+            echo "DOCKER_HOST is empty. The image build uses the runner dind sidecar."
+            exit 1
+          fi
+          case "${DOCKER_HOST}" in
+            unix:///var/run/docker.sock|/var/run/docker.sock)
+              echo "DOCKER_HOST points at the host Docker socket. Use the dind sidecar."
+              exit 1
+              ;;
+          esac
+
+      # A non-root runner cannot write /usr/share/dotnet; install under runner temp.
+      # Publish here, not inside dind. Run 40413482856 spent the 30 minute job limit inside
+      # `dotnet publish` ("Determining projects to restore...") while this workflow's runner
+      # restore finished in seconds. The image is that output on the pinned ASP.NET runtime.
+      - name: DOTNET_INSTALL_DIR under runner temp
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        run: echo "DOTNET_INSTALL_DIR=${DOTNET_INSTALL_DIR}" >> "${GITHUB_ENV}"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      - name: Publish on the runner
+        env:
+          NUGET_CERT_REVOCATION_MODE: offline
+          DOTNET_SYSTEM_NET_DISABLEIPV6: "1"
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+          DOTNET_NOLOGO: "1"
+        run: |
+          set -euo pipefail
+          dotnet publish src/Wayfarer.Host/Wayfarer.Host.csproj \
+            -c Release \
+            -o "${RUNNER_TEMP}/wayfarer-publish" \
+            --no-self-contained \
+            /p:UseAppHost=false
+          test -f "${RUNNER_TEMP}/wayfarer-publish/Wayfarer.Host.dll"
+
+      - name: Build image (local only, never pushed)
+        run: |
+          set -euo pipefail
+          docker build \
+            -f src/Wayfarer.Host/Dockerfile \
+            -t "wayfarer-host:${GITHUB_SHA}" \
+            "${RUNNER_TEMP}/wayfarer-publish"
+
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: "0.76.0"
+          # From https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_checksums.txt
+          TRIVY_SHA256: "e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7"
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          ARCHIVE="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${ARCHIVE}" -o "${ARCHIVE}"
+          echo "${TRIVY_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar -xzf "${ARCHIVE}" trivy
+          mkdir -p "${RUNNER_TEMP}/bin" && mv trivy "${RUNNER_TEMP}/bin/trivy"
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/bin/trivy" version
+
+      - name: Install syft
+        env:
+          SYFT_VERSION: "1.55.0"
+          # From https://github.com/anchore/syft/releases/download/v1.55.0/syft_1.55.0_checksums.txt
+          SYFT_SHA256: "bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d"
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          ARCHIVE="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${ARCHIVE}" -o "${ARCHIVE}"
+          echo "${SYFT_SHA256}  ${ARCHIVE}" | sha256sum -c -
+          tar -xzf "${ARCHIVE}" syft
+          mkdir -p "${RUNNER_TEMP}/bin" && mv syft "${RUNNER_TEMP}/bin/syft"
+          echo "${RUNNER_TEMP}/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/bin/syft" version
+
+      - name: Trivy image scan (HIGH/CRITICAL)
+        run: trivy image --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 "wayfarer-host:${GITHUB_SHA}"
+
+      # Round 3: the SBOM is a syft CycloneDX document of the image archive saved for this digest, so the SBOM, the
+      # scanned image and the signed archive are the same bytes.
+      - name: Syft CycloneDX SBOM and image archive named by image digest
+        run: |
+          set -euo pipefail
+          DIGEST="$(docker image inspect --format '{{.Id}}' "wayfarer-host:${GITHUB_SHA}" | sed 's/^sha256://')"
+          echo "IMAGE_DIGEST=${DIGEST}" >> "${GITHUB_ENV}"
+          mkdir -p sbom image
+          docker save "wayfarer-host:${GITHUB_SHA}" -o "image/wayfarer-host-sha256-${DIGEST}.tar"
+          syft scan "docker-archive:image/wayfarer-host-sha256-${DIGEST}.tar" --output "cyclonedx-json=sbom/wayfarer-host-sha256-${DIGEST}.cdx.json"
+          test -s "sbom/wayfarer-host-sha256-${DIGEST}.cdx.json"
+          sha256sum "image/wayfarer-host-sha256-${DIGEST}.tar" | tee "image/wayfarer-host-sha256-${DIGEST}.tar.sha256"
+          ls -l sbom image
+
+      # M34: the image archive and its SBOM are signed with a keyless Sigstore certificate bound to this
+      # workflow on main. Signatures are recorded in the public Rekor transparency log.
+      - name: Install cosign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@v4.1.2
+        with:
+          cosign-release: v3.1.4
+
+      - name: Sign image archive and SBOM (keyless)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          for blob in "image/wayfarer-host-sha256-${IMAGE_DIGEST}.tar" "sbom/wayfarer-host-sha256-${IMAGE_DIGEST}.cdx.json"; do
+            cosign sign-blob --yes --bundle "${blob}.sigstore.json" "${blob}"
+          done
+          ls -l image sbom
+
+      - name: Upload SBOM and signatures
+        uses: actions/upload-artifact@v6
+        with:
+          name: wayfarer-host-sbom
+          path: |
+            sbom/*.cdx.json
+            sbom/*.sigstore.json
+            image/*.sha256
+            image/*.sigstore.json
+          if-no-files-found: error

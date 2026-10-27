@@ -5,7 +5,11 @@ using System.Text.Json;
 namespace Wayfarer;
 
 /// <summary>
-/// Local session for an unlabeled or standalone boot. Not an Aegis access token.
+/// Local session for a Standalone boot. Not an Aegis access token. X1: Standalone is Development-only, so the host
+/// accepts these sessions only in Development (<see cref="Security.WayfarerAuthentication"/>). ASVS 3.3.1 / X2: a
+/// session carries its issue time and expires after <c>Standalone:SessionMinutes</c> (default 60, at most 480);
+/// a session issued in the future is refused. Restarting with a new <c>Standalone:SigningKey</c> revokes every
+/// session.
 /// </summary>
 public static class StandaloneLocalSession
 {
@@ -13,8 +17,23 @@ public static class StandaloneLocalSession
     public const string Label = "Wayfarer standalone in-process session. Not an Aegis access token.";
     public const string EntitlementCode = "ENTITLEMENT_STANDALONE_STAND_IN";
     public const string EntitlementLabel = "Standalone in-process entitlement stand-in. Not an Atlas Allow.";
+    public const string SessionMinutesConfig = "Standalone:SessionMinutes";
+    public const int DefaultSessionMinutes = 60;
+    public const int MaximumSessionMinutes = 480;
+    private static readonly TimeSpan IssuedAtSkew = TimeSpan.FromSeconds(30);
 
-    public static bool TryIssue(IConfiguration configuration, string? operatorId, DateTimeOffset now, out string token, out string failure)
+    public static TimeSpan Lifetime(IConfiguration configuration)
+    {
+        var minutes = int.TryParse(configuration[SessionMinutesConfig], out var value) && value > 0
+            ? Math.Min(value, MaximumSessionMinutes)
+            : DefaultSessionMinutes;
+        return TimeSpan.FromMinutes(minutes);
+    }
+
+    public static bool TryIssue(IConfiguration configuration, string? operatorId, DateTimeOffset now, out string token, out string failure) =>
+        TryIssue(configuration, operatorId, null, now, out token, out failure);
+
+    public static bool TryIssue(IConfiguration configuration, string? operatorId, string? tenantId, DateTimeOffset now, out string token, out string failure)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         var key = configuration[SigningKeyConfig];
@@ -32,17 +51,25 @@ public static class StandaloneLocalSession
             return false;
         }
 
-        var payload = JsonSerializer.Serialize(new SessionPayload(operatorId.Trim(), now.ToUnixTimeSeconds(), Label));
+        var payload = JsonSerializer.Serialize(new SessionPayload(
+            operatorId.Trim(),
+            now.ToUnixTimeSeconds(),
+            Label,
+            string.IsNullOrWhiteSpace(tenantId) ? null : tenantId.Trim()));
         var body = Base64Url(Encoding.UTF8.GetBytes(payload));
         token = body + "." + Sign(key, body);
         failure = string.Empty;
         return true;
     }
 
-    public static bool TryRead(IConfiguration configuration, string? token, out string operatorId)
+    public static bool TryRead(IConfiguration configuration, string? token, out string operatorId) =>
+        TryRead(configuration, token, DateTimeOffset.UtcNow, out operatorId, out _);
+
+    public static bool TryRead(IConfiguration configuration, string? token, DateTimeOffset now, out string operatorId, out string? tenantId)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         operatorId = string.Empty;
+        tenantId = null;
         var key = configuration[SigningKeyConfig];
         if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(token))
             return false;
@@ -63,10 +90,18 @@ public static class StandaloneLocalSession
             var payload = JsonSerializer.Deserialize<SessionPayload>(json);
             if (payload is null || payload.Label != Label || string.IsNullOrWhiteSpace(payload.OperatorId))
                 return false;
+            var issuedAt = DateTimeOffset.FromUnixTimeSeconds(payload.IssuedAt);
+            if (issuedAt > now + IssuedAtSkew || now - issuedAt > Lifetime(configuration))
+                return false;
             operatorId = payload.OperatorId;
+            tenantId = payload.TenantId;
             return true;
         }
         catch (JsonException)
+        {
+            return false;
+        }
+        catch (ArgumentOutOfRangeException)
         {
             return false;
         }
@@ -97,5 +132,5 @@ public static class StandaloneLocalSession
         return Convert.FromBase64String(padded);
     }
 
-    private sealed record SessionPayload(string OperatorId, long IssuedAt, string Label);
+    private sealed record SessionPayload(string OperatorId, long IssuedAt, string Label, string? TenantId = null);
 }

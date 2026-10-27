@@ -1,0 +1,16 @@
+# M48 / X4: weekly dependency updates for every ecosystem in this repository.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/src/Wayfarer.Host"
+    schedule:
+      interval: weekly

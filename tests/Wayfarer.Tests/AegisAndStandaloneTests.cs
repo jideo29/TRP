@@ -65,7 +65,7 @@ public sealed class AegisAndStandaloneTests
         });
         using var client = factory.CreateClient();
 
-        using var created = await client.PostAsJsonAsync("/api/standalone/session", new { operatorId = "wayfarer-operator" });
+        using var created = await client.PostAsJsonAsync("/api/standalone/session", new { operatorId = "wayfarer-operator", tenantId = "tenant-1" });
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
         var session = await created.Content.ReadFromJsonAsync<SessionBody>();
         Assert.Contains("standalone", session!.Label, StringComparison.OrdinalIgnoreCase);

@@ -36,5 +36,5 @@ jobs:
       - name: Lint OpenAPI with Spectral
         run: npx --yes @stoplight/spectral-cli@6.16.3 lint docs/api/wayfarer-openapi-v1.json --ruleset .spectral.yaml
 
-      - name: Assert Swagger UI returns 404 in Production
-        run: ./scripts/assert-swagger-production-404.sh
+      # The document and Swagger UI not being served outside Development is asserted by OpenApiTests.Document_and_swagger_ui_are_not_served_in_production
+      # (a Production host now needs https listeners and Aegis settings, so the old http script was removed).
