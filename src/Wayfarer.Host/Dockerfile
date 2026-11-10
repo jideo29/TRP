@@ -9,7 +9,7 @@
 # The same run restored on the runner in seconds, so this file does not
 # restore or compile. 14.1.1: the runtime base is pinned by manifest-list digest
 # (resolved 2026-10-27); Dependabot proposes digest updates.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble@sha256:bfd912c83295ce66d4b706ebb8541b9f14259b0e76fbb88b2751f58ce2399d2e
 WORKDIR /app
 COPY --chown=app:app . .
 # Fail the build when the context is the repository instead of the publish output.
